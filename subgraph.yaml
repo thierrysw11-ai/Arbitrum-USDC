@@ -1,0 +1,27 @@
+specVersion: 0.0.5
+description: Subgraph for USDC token transfers on Arbitrum
+repository: https://github.com/thierrysw11-ai/usdc-subgraph
+schema:
+  file: ./schema.graphql
+
+dataSources:
+  - kind: ethereum
+    name: USDC
+    network: arbitrum-one
+    source:
+      address: "0xaf88d065e77c8cc2239327c5edb3a432268e5831" # USDC proxy on Arbitrum
+      abi: USDC
+      startBlock: 22207880
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Transfer
+      abis:
+        - name: USDC
+          file: ./abis/USDC.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleTransfer
+      file: ./src/USDC.ts
