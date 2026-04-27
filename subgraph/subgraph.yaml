@@ -1,5 +1,5 @@
 specVersion: 0.0.5
-description: Subgraph for USDC token transfers on Arbitrum
+description: Subgraph for USDC token transfers on Arbitrum One — indexes Transfer events with hourly volume aggregates, whale-transfer flagging (>= 1M USDC), and structured whale logs (from/to/value).
 repository: https://github.com/thierrysw11-ai/usdc-subgraph
 schema:
   file: ./schema.graphql

@@ -1,0 +1,53 @@
+{
+  "name": "arbitrum-defi-hub-web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.1",
+    "@apollo/client": "3.11.8",
+    "@rainbow-me/rainbowkit": "2.1.7",
+    "@tanstack/react-query": "^5.59.0",
+    "graphql": "^16.9.0",
+    "lucide-react": "^0.452.0",
+    "next": "^14.2.33",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^2.12.7",
+    "viem": "2.21.28",
+    "wagmi": "2.14.16"
+  },
+  "overrides": {
+    "react-transition-group": "^4.4.5",
+    "@wagmi/connectors": "5.7.12",
+    "@wagmi/core": "2.16.7",
+    "wagmi": "2.14.16",
+    "viem": "2.21.28",
+    "optimism": "0.18.0",
+    "@wry/context": "0.7.4",
+    "@wry/equality": "0.5.7",
+    "@wry/trie": "0.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.11",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.2.33",
+    "is-number": "^7.0.0",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.13",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}
+  

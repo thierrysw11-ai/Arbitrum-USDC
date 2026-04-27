@@ -1,0 +1,18 @@
+{
+  "name": "aave-v3-arbitrum-subgraph",
+  "version": "0.4.0",
+  "description": "Subgraph indexing Aave V3 lending activity on Arbitrum One — supplies, borrows, repays, liquidations, flash loans, with daily aggregates and structured liquidation logs.",
+  "private": true,
+  "scripts": {
+    "codegen": "graph codegen",
+    "build": "graph build",
+    "auth": "graph auth",
+    "deploy": "graph deploy aave-subgraph --node https://api.studio.thegraph.com/deploy/",
+    "create-local": "graph create --node http://localhost:8020/ aave-subgraph",
+    "deploy-local": "graph deploy --node http://localhost:8020/ --ipfs http://localhost:5001 aave-subgraph"
+  },
+  "devDependencies": {
+    "@graphprotocol/graph-cli": "^0.87.0",
+    "@graphprotocol/graph-ts": "^0.35.1"
+  }
+}

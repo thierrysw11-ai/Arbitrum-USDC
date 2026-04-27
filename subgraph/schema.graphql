@@ -1,0 +1,30 @@
+type Transfer @entity(immutable: true) {
+  "txHash-logIndex"
+  id: ID!
+  from: Bytes! # address
+  to: Bytes! # address
+  value: BigInt! # uint256, 6 decimals on USDC
+  blockNumber: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+"""
+Hourly aggregate of USDC transfer activity.
+
+Upserted by the Transfer handler so the frontend can render 24h charts with a
+single fast query, instead of downloading thousands of raw Transfer events and
+bucketing client-side.
+"""
+type HourlyVolume @entity {
+  "Unix timestamp of the hour's start, floored to 3600s — stringified"
+  id: ID!
+  "Unix timestamp of the hour's start, floored to 3600s"
+  hourStartTimestamp: BigInt!
+  "Sum of all transfer values in this hour (raw uint256, 6 decimals)"
+  totalVolume: BigInt!
+  "Sum of values from transfers >= $1,000,000 USDC"
+  whaleVolume: BigInt!
+  "Number of transfer events in this hour"
+  transferCount: Int!
+}

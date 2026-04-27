@@ -1,0 +1,161 @@
+# Aave V3 Arbitrum subgraph — schema
+#
+# Designed to match what `web/src/components/AaveMarketsOverview.tsx` queries,
+# while leaving room for future widgets (per-user position view, recent
+# activity feed, liquidation alerts, etc.).
+
+"""
+A single Aave V3 reserve (USDC, WETH, ARB, etc.) on Arbitrum.
+
+`totalSupply` and `totalBorrow` are *principal* aggregates accumulated from
+Supply/Withdraw/Borrow/Repay events. They do NOT include accrued interest —
+to get the interest-bearing amount, multiply by the corresponding
+`liquidityIndex` / `variableBorrowIndex` and divide by 1e27 (RAY).
+"""
+type Reserve @entity {
+  "Underlying ERC20 address (lowercase hex)"
+  id: ID!
+  "Same as id, but typed as Bytes for clients that prefer it"
+  asset: Bytes!
+
+  "ERC20 metadata, populated on first event by reading the underlying token"
+  symbol: String!
+  name: String!
+  decimals: Int!
+
+  "Live ray-scaled (1e27) APRs from the most recent ReserveDataUpdated event"
+  liquidityRate: BigInt!
+  variableBorrowRate: BigInt!
+  liquidityIndex: BigInt!
+  variableBorrowIndex: BigInt!
+
+  "Principal aggregates in token base units (multiply by 10^-decimals to read)"
+  totalSupply: BigInt!
+  totalBorrow: BigInt!
+
+  "Unix timestamp of the most recent state update"
+  lastUpdatedAt: BigInt!
+
+  "Reverse-derived event lists for drill-downs"
+  supplies: [Supply!]! @derivedFrom(field: "reserve")
+  borrows: [Borrow!]! @derivedFrom(field: "reserve")
+  repays: [Repay!]! @derivedFrom(field: "reserve")
+  flashLoans: [FlashLoan!]! @derivedFrom(field: "asset")
+  dailyStats: [DailyReserveStat!]! @derivedFrom(field: "reserve")
+}
+
+"""
+Any address that has interacted with the protocol (supplier, borrower,
+repayer). Useful for building per-user dashboards later.
+"""
+type Account @entity {
+  "Address (lowercase hex)"
+  id: ID!
+  supplies: [Supply!]! @derivedFrom(field: "user")
+  borrows: [Borrow!]! @derivedFrom(field: "user")
+  repays: [Repay!]! @derivedFrom(field: "repayer")
+}
+
+# ---------------------------------------------------------------------------
+# Per-event entities (immutable). All ids are `txHash-logIndex`.
+# ---------------------------------------------------------------------------
+
+type Supply @entity(immutable: true) {
+  id: ID!
+  reserve: Reserve!
+  user: Account!
+  "Address that ultimately receives the aTokens (may differ from msg.sender)"
+  onBehalfOf: Bytes!
+  amount: BigInt!
+  blockNumber: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+type Borrow @entity(immutable: true) {
+  id: ID!
+  reserve: Reserve!
+  user: Account!
+  onBehalfOf: Bytes!
+  amount: BigInt!
+  "Borrow rate at the moment of borrow, ray-scaled (1e27)"
+  borrowRate: BigInt!
+  "1 = stable, 2 = variable (Aave V3 has effectively retired stable)"
+  interestRateMode: Int!
+  blockNumber: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+type Repay @entity(immutable: true) {
+  id: ID!
+  reserve: Reserve!
+  "The borrower whose debt is being repaid"
+  user: Account!
+  "The address that actually paid (may equal user or be a third party)"
+  repayer: Account!
+  amount: BigInt!
+  "True if the repayment was settled by burning aTokens directly"
+  useATokens: Boolean!
+  blockNumber: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+type Liquidation @entity(immutable: true) {
+  id: ID!
+  collateralAsset: Reserve!
+  debtAsset: Reserve!
+  user: Account!
+  liquidator: Bytes!
+  debtToCover: BigInt!
+  liquidatedCollateralAmount: BigInt!
+  receiveAToken: Boolean!
+  blockNumber: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+type FlashLoan @entity(immutable: true) {
+  id: ID!
+  asset: Reserve!
+  target: Bytes!
+  initiator: Bytes!
+  amount: BigInt!
+  interestRateMode: Int!
+  premium: BigInt!
+  blockNumber: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+# ---------------------------------------------------------------------------
+# Aggregates
+# ---------------------------------------------------------------------------
+
+"""
+Daily activity counters for one reserve. Upserted by every Supply, Borrow,
+Repay, Liquidation, and FlashLoan event the reserve sees on that day. Powers
+the 7-day activity sparklines in the Markets table.
+"""
+type DailyReserveStat @entity {
+  "reserveAddress-dayStartTimestamp"
+  id: ID!
+  reserve: Reserve!
+  "Day-start unix timestamp (floored to 86400s)"
+  date: BigInt!
+
+  supplyVolume: BigInt!
+  supplyCount: Int!
+
+  borrowVolume: BigInt!
+  borrowCount: Int!
+
+  repayVolume: BigInt!
+  repayCount: Int!
+
+  liquidationCount: Int!
+
+  flashLoanVolume: BigInt!
+  flashLoanCount: Int!
+}

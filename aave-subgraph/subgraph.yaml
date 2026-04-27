@@ -1,0 +1,52 @@
+specVersion: 0.0.5
+description: Aave V3 lending activity on Arbitrum One — supplies, borrows, repays, liquidations, flash loans, with daily aggregates, ERC20-resolved reserve metadata, and structured liquidation logs.
+repository: https://github.com/thierrysw11-ai/AAVE-Subgraph
+
+schema:
+  file: ./schema.graphql
+
+dataSources:
+  - kind: ethereum
+    name: Pool
+    network: arbitrum-one
+    source:
+      # Aave V3 Pool proxy on Arbitrum One.
+      address: "0x794a61358D6845594F94dc1DB02A252b5b4814aD"
+      abi: Pool
+      # Block in which the proxy was deployed (March 2022). Indexing starts
+      # here. Earlier blocks are skipped by the indexer for free.
+      startBlock: 7742429
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Reserve
+        - Account
+        - Supply
+        - Borrow
+        - Repay
+        - Liquidation
+        - FlashLoan
+        - DailyReserveStat
+      abis:
+        - name: Pool
+          file: ./abis/Pool.json
+        - name: ERC20
+          file: ./abis/ERC20.json
+      eventHandlers:
+        - event: Supply(indexed address,address,indexed address,uint256,indexed uint16)
+          handler: handleSupply
+        - event: Withdraw(indexed address,indexed address,indexed address,uint256)
+          handler: handleWithdraw
+        - event: Borrow(indexed address,address,indexed address,uint256,uint8,uint256,indexed uint16)
+          handler: handleBorrow
+        - event: Repay(indexed address,indexed address,indexed address,uint256,bool)
+          handler: handleRepay
+        - event: LiquidationCall(indexed address,indexed address,indexed address,uint256,uint256,address,bool)
+          handler: handleLiquidationCall
+        - event: FlashLoan(indexed address,address,indexed address,uint256,uint8,uint256,indexed uint16)
+          handler: handleFlashLoan
+        - event: ReserveDataUpdated(indexed address,uint256,uint256,uint256,uint256,uint256)
+          handler: handleReserveDataUpdated
+      file: ./src/pool.ts
