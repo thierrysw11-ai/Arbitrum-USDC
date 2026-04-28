@@ -141,20 +141,31 @@ export async function POST(req: NextRequest) {
 
     // Append the assistant turn (text + any tool_use blocks) to the wire
     // conversation. Filter to the block types we care about.
-    const blocks = response.content.flatMap((b) => {
-      if (b.type === "text") return [{ type: "text" as const, text: b.text }];
-      if (b.type === "tool_use") {
-        return [
-          {
-            type: "tool_use" as const,
-            id: b.id,
-            name: b.name,
-            input: b.input,
-          },
-        ];
+    //
+    // We annotate the flatMap return type explicitly because TS otherwise
+    // picks one branch's element type instead of unifying them, which
+    // breaks Vercel's stricter prod build.
+    type AssistantBlock =
+      | { type: "text"; text: string }
+      | { type: "tool_use"; id: string; name: string; input: unknown };
+    const blocks: AssistantBlock[] = response.content.flatMap(
+      (b): AssistantBlock[] => {
+        if (b.type === "text") {
+          return [{ type: "text", text: b.text }];
+        }
+        if (b.type === "tool_use") {
+          return [
+            {
+              type: "tool_use",
+              id: b.id,
+              name: b.name,
+              input: b.input,
+            },
+          ];
+        }
+        return [];
       }
-      return [];
-    });
+    );
     conversation.push({ role: "assistant", content: blocks });
 
     // If the model isn't asking for tools, we're done.
