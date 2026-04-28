@@ -57,7 +57,7 @@ export async function getServerPortfolio(
     abi: POOL_ABI,
     functionName: "getUserAccountData",
     args: [address],
-  })) as readonly [bigint, bigint, bigint, bigint, bigint, bigint];
+  })) as unknown as readonly [bigint, bigint, bigint, bigint, bigint, bigint];
 
   const account: UserAccountData = {
     totalCollateralBase: aggRaw[0],
@@ -134,7 +134,7 @@ export async function getServerPortfolio(
       continue;
     }
 
-    const userArr = userRes.result as readonly [
+    const userArr = userRes.result as unknown as readonly [
       bigint, bigint, bigint, bigint, bigint, bigint, bigint, number, boolean
     ];
     const aTokenBalance = userArr[0];
@@ -143,7 +143,7 @@ export async function getServerPortfolio(
 
     if (aTokenBalance === 0n && variableDebtBalance === 0n) continue;
 
-    const cfgArr = cfgRes.result as readonly [
+    const cfgArr = cfgRes.result as unknown as readonly [
       bigint, bigint, bigint, bigint, bigint,
       boolean, boolean, boolean, boolean, boolean
     ];
@@ -151,9 +151,9 @@ export async function getServerPortfolio(
     const ltv = cfgArr[1];
     const liquidationThreshold = cfgArr[2];
 
-    const priceBase = priceRes.result as bigint;
+    const priceBase = priceRes.result as unknown as bigint;
 
-    const reserveData = reserveDataRes.result as {
+    const reserveData = reserveDataRes.result as unknown as {
       currentLiquidityRate: bigint;
       currentVariableBorrowRate: bigint;
     };

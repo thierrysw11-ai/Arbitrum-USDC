@@ -154,8 +154,10 @@ export function usePortfolio(
       }
 
       // getUserReserveData returns 9 fields as a tuple. Wagmi/viem types
-      // these as readonly tuples; index destructure for clarity.
-      const userArr = userRes.result as readonly [
+      // these as a wide union (any of the contracts in our multicall could
+      // be returning); we know which call this index is from at runtime, so
+      // cast through unknown to satisfy stricter Vercel tsc.
+      const userArr = userRes.result as unknown as readonly [
         bigint, // currentATokenBalance
         bigint, // currentStableDebt
         bigint, // currentVariableDebt
@@ -173,7 +175,7 @@ export function usePortfolio(
       // Skip reserves the user has never touched.
       if (aTokenBalance === 0n && variableDebtBalance === 0n) continue;
 
-      const cfgArr = cfgRes.result as readonly [
+      const cfgArr = cfgRes.result as unknown as readonly [
         bigint, // decimals
         bigint, // ltv
         bigint, // liquidationThreshold
@@ -189,11 +191,11 @@ export function usePortfolio(
       const ltv = cfgArr[1];
       const liquidationThreshold = cfgArr[2];
 
-      const priceBase = priceRes.result as bigint;
+      const priceBase = priceRes.result as unknown as bigint;
 
       // Pool.getReserveData returns a struct — viem decodes the tuple into
       // an object keyed by the named fields when the ABI declares them.
-      const reserveData = reserveDataRes.result as {
+      const reserveData = reserveDataRes.result as unknown as {
         currentLiquidityRate: bigint;
         currentVariableBorrowRate: bigint;
       };
@@ -226,7 +228,7 @@ export function usePortfolio(
         healthFactor: 0n,
       };
     }
-    const a = accountQuery.data as readonly [
+    const a = accountQuery.data as unknown as readonly [
       bigint,
       bigint,
       bigint,

@@ -165,7 +165,7 @@ export default function SendUSDC() {
     const wei = gasUnits * gasPrice;
     const eth = Number(formatEther(wei));
     if (!ethUsdData) return { eth };
-    const ethUsd = Number((ethUsdData as readonly [bigint, bigint, bigint, bigint, bigint])[1]) /
+    const ethUsd = Number((ethUsdData as unknown as readonly [bigint, bigint, bigint, bigint, bigint])[1]) /
       Math.pow(10, ETH_USD_FEED_DECIMALS);
     return { eth, usd: eth * ethUsd };
   }, [gasUnits, gasPrice, ethUsdData]);
