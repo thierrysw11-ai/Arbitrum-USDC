@@ -5,12 +5,27 @@
  * contract that supports EIP-3009 `transferWithAuthorization`, and the
  * EIP-712 domain that USDC uses on that chain.
  *
- * We support Arbitrum (primary, since the rest of the project lives there)
- * and Base (secondary, because every public x402 example targets Base and
- * we want to be interoperable).
+ * As of Phase A, this file is a thin compatibility wrapper over
+ * `lib/chains.ts` — the canonical multi-chain registry. The exports here
+ * (`X402NetworkSlug`, `X402NetworkConfig`, `X402_NETWORKS`, `getNetwork`)
+ * keep the same shape so the x402 facilitator + paywalled endpoints
+ * compile unchanged. Values flow from `CHAINS_BY_SLUG[slug]`.
+ *
+ * Currently only "arbitrum-one" and "base" are x402-enabled — those are
+ * the two chains where the facilitator wallet is funded. The chain
+ * registry's `chain.x402.enabled` flag tracks this; if you want to enable
+ * x402 on Optimism or Polygon later, fund the facilitator on that chain,
+ * flip `enabled: true` in `chains.ts`, then extend the `X402NetworkSlug`
+ * union below.
+ *
+ * @deprecated For new code, prefer
+ *   `import { CHAINS_BY_SLUG, explorerTxUrl } from '@/lib/chains'`
+ *   and reference per-chain fields directly.
  */
 
-import { arbitrum, base } from "viem/chains";
+import { arbitrum } from "viem/chains";
+
+import { CHAINS_BY_SLUG, explorerTxUrl } from "../chains";
 
 export type X402NetworkSlug = "arbitrum-one" | "base";
 
@@ -25,35 +40,35 @@ export interface X402NetworkConfig {
   domainName: string;
   /** EIP-712 domain `version`. Differs across chains! */
   domainVersion: string;
-  /** Block explorer URL pattern for tx hashes. {hash} is the placeholder. */
+  /** Block explorer URL pattern for tx hashes. */
   explorerTx: (hash: string) => string;
   /** viem chain object for instantiating clients. */
   viemChain: typeof arbitrum;
 }
 
+/**
+ * Build an X402NetworkConfig from a chain registry entry. Internal helper.
+ * The viem chain object cast goes through `unknown` because chain types in
+ * viem are nominally typed by id — `typeof arbitrum` doesn't accept other
+ * chains directly even though their runtime shape is identical.
+ */
+function fromRegistry(slug: X402NetworkSlug): X402NetworkConfig {
+  const c = CHAINS_BY_SLUG[slug];
+  return {
+    slug,
+    chainId: c.chainId,
+    usdc: c.usdc.address,
+    usdcDecimals: c.usdc.decimals,
+    domainName: c.usdc.domainName,
+    domainVersion: c.usdc.domainVersion,
+    explorerTx: (hash) => explorerTxUrl(c, hash),
+    viemChain: c.viemChain as unknown as typeof arbitrum,
+  };
+}
+
 export const X402_NETWORKS: Record<X402NetworkSlug, X402NetworkConfig> = {
-  "arbitrum-one": {
-    slug: "arbitrum-one",
-    chainId: 42161,
-    usdc: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
-    usdcDecimals: 6,
-    // Native USDC on Arbitrum identifies itself as "USD Coin" v2 in the EIP-712 domain.
-    domainName: "USD Coin",
-    domainVersion: "2",
-    explorerTx: (hash) => `https://arbiscan.io/tx/${hash}`,
-    viemChain: arbitrum,
-  },
-  base: {
-    slug: "base",
-    chainId: 8453,
-    usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-    usdcDecimals: 6,
-    // Base USDC also reports "USD Coin" v2.
-    domainName: "USD Coin",
-    domainVersion: "2",
-    explorerTx: (hash) => `https://basescan.org/tx/${hash}`,
-    viemChain: base as unknown as typeof arbitrum,
-  },
+  "arbitrum-one": fromRegistry("arbitrum-one"),
+  base: fromRegistry("base"),
 };
 
 export function getNetwork(slug: string): X402NetworkConfig {

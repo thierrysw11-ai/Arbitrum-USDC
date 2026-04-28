@@ -9,8 +9,8 @@ agent tools, just parameterized by chain.
 | Sub-task | Status |
 |----------|--------|
 | 1. Recon + `chains.ts` registry | **verified** — see "Address verification status" below; only token addresses still need manual verification |
-| 2. wagmi multi-chain config | **done** — `lib/wagmi.ts` now consumes the registry and registers all four chains. Chain switcher will appear in the connect modal automatically. |
-| 3. Refactor existing components to consume `chains.ts` | not started |
+| 2. wagmi multi-chain config | **done** — `lib/wagmi.ts` now consumes the registry and registers all four chains. Chain switcher pill in nav verified working in dev (`docs/screenshots/`). |
+| 3. Refactor foundation files to consume `chains.ts` | **done** — `lib/aave/addresses.ts` and `lib/x402/networks.ts` are now thin compat wrappers; values flow from the registry. All 11 consumers compile unchanged. |
 | 4. Subgraph deploys (Base, OP, Polygon) | not started |
 | 5. Chain-aware Apollo clients | not started |
 | 6. Portfolio page chain-aware | not started |
