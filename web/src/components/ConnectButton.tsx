@@ -65,6 +65,29 @@ const ConnectButton = () => {
 
               return (
                 <div className="flex items-center gap-2">
+                  {/* Chain switcher pill — click to switch network. Shows the
+                      currently-connected chain's name + icon (provided by
+                      RainbowKit, sourced from viem/wagmi chain metadata). */}
+                  <button
+                    onClick={openChainModal}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-900 border border-gray-800 text-gray-300 hover:text-white hover:border-gray-600 transition-colors text-sm font-bold"
+                    title="Switch network"
+                  >
+                    {chain.hasIcon && chain.iconUrl && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={chain.iconUrl}
+                        alt={chain.name ?? 'chain'}
+                        width={16}
+                        height={16}
+                        className="rounded-full"
+                        style={{
+                          background: chain.iconBackground ?? 'transparent',
+                        }}
+                      />
+                    )}
+                    <span className="hidden sm:inline">{chain.name}</span>
+                  </button>
                   <button
                     onClick={openAccountModal}
                     className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600/10 border border-blue-500/30 text-blue-300 hover:bg-blue-600/20 transition-colors text-sm font-mono"
