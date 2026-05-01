@@ -1,34 +1,29 @@
 import { useAccount } from 'wagmi';
 import { useState, useEffect } from 'react';
 
-const AAVE_URL = process.env.NEXT_PUBLIC_AAVE_SUBGRAPH_URL!;
+const USDC_SUBGRAPH_URL = process.env.NEXT_PUBLIC_USDC_SUBGRAPH_URL!;
 
 export function useUserPositions() {
   const { address, isConnected } = useAccount();
   const [positions, setPositions] = useState<any[]>([]);
-  const [marketTrends, setMarketTrends] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     if (!address || !isConnected) return;
 
-    const fetchSentinelIntelligence = async () => {
+    const fetchSentinelForensics = async () => {
       setIsLoading(true);
       try {
+        // Correcting the Type Mismatch: Passing address as Bytes
+        // Using the existing entities from your Explorer: transfers and hourlyVolumes
         const query = `
-          query GetSentinelIntelligence($user: String!) {
-            # User Personal Data
-            accounts(where: { id: $user }) {
-              supplies(orderBy: timestamp, orderDirection: desc) {
-                amount
-                reserve { symbol decimals }
-              }
-              borrows(orderBy: timestamp, orderDirection: desc) {
-                amount
-                reserve { symbol decimals }
-              }
+          query GetSentinelForensics($user: Bytes!) {
+            incoming: transfers(where: { to: $user }) {
+              value
             }
-            # Global Market Context (from your screenshot)
+            outgoing: transfers(where: { from: $user }) {
+              value
+            }
             hourlyVolumes(first: 1, orderBy: hourStartTimestamp, orderDirection: desc) {
               totalVolume
               whaleVolume
@@ -37,48 +32,49 @@ export function useUserPositions() {
           }
         `;
 
-        const response = await fetch(AAVE_URL, {
+        const response = await fetch(USDC_SUBGRAPH_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query, variables: { user: address.toLowerCase() } }),
+          body: JSON.stringify({ 
+            query, 
+            variables: { user: address } 
+          }),
         });
 
         const { data } = await response.json();
-        const userData = data?.accounts?.[0];
-        const globalVolume = data?.hourlyVolumes?.[0];
 
-        // Process positions and generate the "Agent Assessment"
-        const finalPositions = processPositions(userData, globalVolume);
-        setPositions(finalPositions);
-        setMarketTrends(globalVolume);
+        if (data) {
+          // 1. Calculate Net Balance (Accounting for the missing 'Account' entity)
+          const incoming = data.incoming?.reduce((sum: any, t: any) => sum + BigInt(t.value), 0n) || 0n;
+          const outgoing = data.outgoing?.reduce((sum: any, t: any) => sum + BigInt(t.value), 0n) || 0n;
+          
+          // USDC typically has 6 decimals
+          const netBalance = Number(incoming - outgoing) / 1_000_000;
+
+          if (netBalance > 0) {
+            const whaleData = data.hourlyVolumes?.[0];
+            
+            setPositions([{
+              symbol: "USDC",
+              amount: netBalance.toFixed(4),
+              isDebt: false,
+              type: "MARKET EXPOSURE",
+              // Integrating global whaleVolume from your image_3b61ac.png sidebar
+              assessment: `Core Liquidity Shield. Transaction ledger confirms active presence. Protocol whale volume is currently ${whaleData?.whaleVolume || 'stable'}.`
+            }]);
+          } else {
+            setPositions([]);
+          }
+        }
       } catch (err) {
-        console.error("Sentinel Intelligence Error:", err);
+        console.error("Sentinel Ledger Error:", err);
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchSentinelIntelligence();
+    fetchSentinelForensics();
   }, [address, isConnected]);
 
-  return { positions, marketTrends, isLoading };
-}
-
-// Logic to generate the "Agent Assessment" sentences seen in image_3bbbe3.png
-function processPositions(userData: any, globalVolume: any) {
-  const processed: any[] = [];
-  if (!userData) return [];
-
-  // Example logic for USDC Collateral mapping to your UI
-  userData.supplies?.forEach((s: any) => {
-    processed.push({
-      symbol: s.reserve.symbol,
-      amount: (Number(s.amount) / Math.pow(10, s.reserve.decimals)).toFixed(4),
-      isDebt: false,
-      type: "MARKET EXPOSURE",
-      assessment: `Core Liquidity Shield. Current protocol whale volume is ${globalVolume?.whaleVolume || 'stable'}, protecting your health factor.`
-    });
-  });
-
-  return processed;
+  return { positions, isLoading, hasPositions: positions.length > 0 };
 }
