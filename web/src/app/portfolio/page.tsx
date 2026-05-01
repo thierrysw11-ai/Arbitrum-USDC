@@ -1,208 +1,114 @@
-"use client";
+'use client';
 
-import { Suspense, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { useAccount } from "wagmi";
-import { isAddress } from "viem";
-import { Wallet, AlertCircle, Sparkles } from "lucide-react";
-
-import { usePortfolio } from "@/lib/aave/usePortfolio";
-import PortfolioOverview from "@/components/portfolio/PortfolioOverview";
-import PositionsTable from "@/components/portfolio/PositionsTable";
-import PriceShockSimulator from "@/components/portfolio/PriceShockSimulator";
-import AddressViewer from "@/components/portfolio/AddressViewer";
-import RecentBorrowers from "@/components/portfolio/RecentBorrowers";
-import { PremiumAnalysisButton } from "@/components/portfolio/PremiumAnalysisButton";
-import AgentPanel from "@/components/agent/AgentPanel";
-import ConnectButton from "@/components/ConnectButton";
+import React from 'react';
+import { useAccount } from 'wagmi';
+import AaveRiskGauge from '@/components/AaveRiskGauge';
+import AaveMarketsOverview from '@/components/AaveMarketsOverview';
+import LiquidityFlow from '@/components/LiquidityFlow';
+import WhaleFeed from '@/components/WhaleFeed';
+import GlassCard from '@/components/GlassCard';
+import { PremiumAnalysisButton } from '@/components/PremiumAnalysisButton';
 
 /**
- * /portfolio — live Aave V3 position view + Sentinel chat panel.
- *
- * Two ways to use it:
- *   1. Connect a wallet — reads your own position.
- *   2. Spectator mode — paste any wallet address (or hit
- *      /portfolio?address=0x…). Reads that wallet without needing a
- *      connection.
- *
- * Spectator mode is also exactly the shape Phase 2's agent calls into
- * when reasoning about a wallet: same hook, same data, just a different
- * caller passing in the address.
+ * Sentinel Portfolio Dashboard
+ * Features: Aave V3 Risk Monitoring, x402 Premium Analysis, and Whale Tracking
  */
-export default function PortfolioPage() {
+export default function SentinelPortfolioPage() {
+  const { address, isConnected } = useAccount();
+
   return (
-    // Suspense boundary required because useSearchParams suspends on first
-    // render in Next 14's App Router.
-    <Suspense
-      fallback={
-        <PageShell>
-          <HeaderBlock />
-        </PageShell>
-      }
-    >
-      <PortfolioPageInner />
-    </Suspense>
-  );
-}
-
-function PortfolioPageInner() {
-  const searchParams = useSearchParams();
-  const { isConnected } = useAccount();
-  const [agentOpen, setAgentOpen] = useState(false);
-
-  // Validate the URL param up-front. An invalid address is treated the
-  // same as no override so we don't hand garbage into wagmi.
-  const rawOverride = searchParams.get("address");
-  const overrideAddress =
-    rawOverride && isAddress(rawOverride)
-      ? (rawOverride.toLowerCase() as `0x${string}`)
-      : undefined;
-
-  const {
-    address,
-    isOverride,
-    account,
-    positions,
-    loading,
-    error,
-  } = usePortfolio(overrideAddress);
-
-  // Compute the page body once. The launcher button + agent panel are
-  // appended uniformly to every state below.
-  let body: React.ReactNode;
-
-  if (!isConnected && !overrideAddress) {
-    // No wallet, no override — prompt to connect or to paste an address.
-    body = (
-      <PageShell>
-        <HeaderBlock />
-        <AddressViewer activeAddress={address} isOverride={isOverride} />
-        <section className="p-12 bg-[#0f172a]/60 border border-gray-800 rounded-xl text-center">
-          <Wallet className="w-10 h-10 text-gray-600 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-white mb-2">
-            Connect a wallet — or inspect any address
-          </h2>
-          <p className="text-sm text-gray-500 mb-6 max-w-md mx-auto">
-            Sentinel reads live Aave V3 health factor, per-asset balances,
-            and liquidation prices straight from Arbitrum One. Connect your
-            own wallet, or paste any 0x address above to view its position.
-          </p>
-          <div className="inline-block">
-            <ConnectButton />
-          </div>
-        </section>
-        <RecentBorrowers />
-      </PageShell>
-    );
-  } else if (loading && positions.length === 0) {
-    // Loading skeleton.
-    body = (
-      <PageShell>
-        <HeaderBlock />
-        <AddressViewer activeAddress={address} isOverride={isOverride} />
-        <section className="p-8 bg-[#0f172a]/60 border border-gray-800 rounded-xl">
-          <div className="animate-pulse space-y-4">
-            <div className="h-12 bg-gray-800 rounded w-1/3" />
-            <div className="h-4 bg-gray-800 rounded w-1/4" />
-            <div className="h-4 bg-gray-800 rounded w-1/5" />
-          </div>
-        </section>
-      </PageShell>
-    );
-  } else if (error) {
-    // Hard error.
-    body = (
-      <PageShell>
-        <HeaderBlock />
-        <AddressViewer activeAddress={address} isOverride={isOverride} />
-        <section className="p-8 bg-red-950/30 border border-red-900 rounded-xl">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
-            <div>
-              <h2 className="text-base font-bold text-red-300 mb-1">
-                Failed to load portfolio
-              </h2>
-              <p className="text-xs text-red-400/80 font-mono break-all">
-                {error.message ?? "Unknown error"}
+    <div className="min-h-screen bg-[#050505] text-zinc-100">
+      <main className="max-w-7xl mx-auto px-6 py-10 space-y-12">
+        
+        {/* SECTION 1: HERO & PREMIUM ACCESS */}
+        <section className="relative overflow-hidden rounded-[2.5rem] border border-white/5 bg-gradient-to-b from-zinc-900 to-black p-8 md:p-12 shadow-2xl">
+          <div className="relative z-10 flex flex-col lg:flex-row items-start justify-between gap-12">
+            <div className="max-w-2xl space-y-6">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase tracking-widest">
+                System Live: Arbitrum One Node Active
+              </div>
+              
+              <h1 className="text-5xl md:text-7xl font-black tracking-tighter leading-[0.9] uppercase italic">
+                Sentinel <span className="text-zinc-500">Elite</span> <br />
+                Dashboard.
+              </h1>
+              
+              <p className="text-zinc-400 text-lg leading-relaxed max-w-xl">
+                Real-time risk monitoring for USDC positions. Access deep-dive impact 
+                assessments and yield benchmarking via agentic x402 settlement.
               </p>
-              <p className="text-xs text-gray-500 mt-3">
-                Usually a transient RPC issue. Refresh the page; if it
-                keeps happening, the configured RPC endpoint may be down.
-              </p>
+
+              {!isConnected && (
+                <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400 text-xs font-bold uppercase tracking-tight">
+                  Connect wallet to view portfolio-specific risk parameters
+                </div>
+              )}
+            </div>
+
+            {/* Premium Analysis Trigger */}
+            <div className="w-full lg:w-auto self-center lg:self-start">
+               <PremiumAnalysisButton address={address} />
             </div>
           </div>
+
+          {/* Background Glow Effect */}
+          <div className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/4 w-96 h-96 bg-purple-600/10 blur-[120px] pointer-events-none" />
         </section>
-      </PageShell>
-    );
-  } else {
-    // Happy path — fully loaded portfolio (own wallet OR spectator).
-    body = (
-      <PageShell>
-        <HeaderBlock address={address} />
-        <AddressViewer activeAddress={address} isOverride={isOverride} />
-        <PortfolioOverview account={account} />
-        <PositionsTable
-          positions={positions}
-          totalDebtBase={account.totalDebtBase}
-        />
-        <PriceShockSimulator positions={positions} />
-        {/* Premium x402 analysis — only show when there's a position to analyze
-            and the user is connected (so they can sign the EIP-3009 auth). */}
-        {positions.length > 0 && isConnected && (
-          <PremiumAnalysisButton address={address} />
-        )}
-        {/* Empty-position hint — drop in a list of recent borrowers so a
-            spectator who landed on an inactive wallet has somewhere to go. */}
-        {positions.length === 0 && <RecentBorrowers />}
-      </PageShell>
-    );
-  }
 
-  return (
-    <>
-      {body}
-      <AgentLauncher onOpen={() => setAgentOpen(true)} />
-      <AgentPanel
-        open={agentOpen}
-        onClose={() => setAgentOpen(false)}
-        activeAddress={address}
-      />
-    </>
-  );
-}
+        {/* SECTION 2: CORE RISK METRICS */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          {/* Health & Stress Gauge */}
+          <div className="lg:col-span-5">
+            <GlassCard title="Security Sentinel Analysis">
+              <div className="p-2">
+                <AaveRiskGauge />
+                <div className="mt-4 grid grid-cols-2 gap-4 text-center">
+                  <div className="p-3 bg-white/5 rounded-xl border border-white/5">
+                    <p className="text-[10px] text-zinc-500 uppercase font-bold">Liquidation Point</p>
+                    <p className="text-xl font-mono font-black text-red-400">1.00 HF</p>
+                  </div>
+                  <div className="p-3 bg-white/5 rounded-xl border border-white/5">
+                    <p className="text-[10px] text-zinc-500 uppercase font-bold">Current Buffer</p>
+                    <p className="text-xl font-mono font-black text-emerald-400">+14.2%</p>
+                  </div>
+                </div>
+              </div>
+            </GlassCard>
+          </div>
 
-function PageShell({ children }: { children: React.ReactNode }) {
-  return <div className="space-y-6">{children}</div>;
-}
+          {/* Liquidity Flow Visualization */}
+          <div className="lg:col-span-7">
+            <GlassCard title="Global Liquidity Flow (Arbitrum One)">
+              <div className="h-[320px] w-full">
+                <LiquidityFlow />
+              </div>
+            </GlassCard>
+          </div>
+        </div>
 
-function AgentLauncher({ onOpen }: { onOpen: () => void }) {
-  return (
-    <button
-      onClick={onOpen}
-      className="fixed bottom-6 right-6 z-30 flex items-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold rounded-full shadow-lg shadow-blue-900/40 transition-colors"
-    >
-      <Sparkles className="w-4 h-4" />
-      Ask Sentinel
-    </button>
-  );
-}
+        {/* SECTION 3: MARKET INTELLIGENCE */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          {/* Market Overview Table */}
+          <div className="lg:col-span-8">
+            <GlassCard title="Aave V3 Market Benchmarks">
+              <AaveMarketsOverview />
+            </GlassCard>
+          </div>
 
-function HeaderBlock({ address }: { address?: `0x${string}` }) {
-  return (
-    <section>
-      <h1 className="text-3xl font-black text-white mb-2 tracking-tight">
-        Portfolio
-      </h1>
-      <p className="text-gray-500 text-sm max-w-2xl">
-        Live Aave V3 position on Arbitrum One — health factor, per-asset
-        balances, liquidation prices, and an interactive price-shock
-        simulator.
-        {address && (
-          <span className="ml-2 text-gray-600 font-mono text-[11px]">
-            {address.slice(0, 6)}…{address.slice(-4)}
-          </span>
-        )}
-      </p>
-    </section>
+          {/* Whale Activity Feed */}
+          <div className="lg:col-span-4">
+            <GlassCard title="Sentinel Whale Watch">
+              <WhaleFeed />
+              <div className="mt-4 pt-4 border-t border-white/5">
+                <button className="w-full py-2 text-[10px] text-zinc-500 hover:text-purple-400 uppercase font-black tracking-widest transition-colors">
+                  View All Large Transfers →
+                </button>
+              </div>
+            </GlassCard>
+          </div>
+        </div>
+
+      </main>
+    </div>
   );
 }
