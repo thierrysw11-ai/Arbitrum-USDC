@@ -1,88 +1,86 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useAccount, useReadContract } from 'wagmi';
-import { formatUnits } from 'viem';
-import { Zap, ShieldAlert, Loader2 } from 'lucide-react';
-
-// AAVE V3 POOL ON ARBITRUM
-const POOL_ADDRESS = '0x794a61358D6845594F94dc1DB02A252b5b4814aD';
-const POOL_ABI = [{
-    name: 'getUserAccountData',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'user', type: 'address' }],
-    outputs: [
-        { name: 'totalCollateralBase', type: 'uint256' },
-        { name: 'totalDebtBase', type: 'uint256' },
-        { name: 'availableBorrowsBase', type: 'uint256' },
-        { name: 'currentLiquidationThreshold', type: 'uint256' },
-        { name: 'ltv', type: 'uint256' },
-        { name: 'healthFactor', type: 'uint256' },
-    ],
-}] as const;
+import { useUserPositions } from '@/hooks/useUserPositions';
+import { Zap, X, ShieldAlert, TrendingDown } from 'lucide-react';
 
 export function PremiumAnalysisButton() {
-    const [isOpen, setIsOpen] = useState(false);
-    const { address, isConnected } = useAccount();
+  const [isOpen, setIsOpen] = useState(false);
+  const { positions, isLoading } = useUserPositions();
 
-    const { data, isLoading } = useReadContract({
-        address: POOL_ADDRESS,
-        abi: POOL_ABI,
-        functionName: 'getUserAccountData',
-        args: address ? [address] : undefined,
-        query: { enabled: isOpen && !!address }
-    });
+  return (
+    <>
+      {/* 1. THE TRIGGER BUTTON */}
+      <button 
+        onClick={() => setIsOpen(true)}
+        className="flex items-center gap-3 px-8 py-4 bg-white text-black rounded-full font-black uppercase italic tracking-tighter hover:scale-105 transition-all shadow-2xl active:scale-95"
+      >
+        <Zap className="fill-black" size={18} />
+        Run Elite Analysis
+      </button>
 
-    // Extracting the data safely
-    const healthFactor = data ? Number(formatUnits(data[5], 18)) : 0;
-    const hasDebt = data ? data[1] > 0n : false;
+      {/* 2. THE OVERLAY PANEL (Fixed to ignore parent overflow) */}
+      {isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+          {/* Blur Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black/60 backdrop-blur-md animate-in fade-in duration-300" 
+            onClick={() => setIsOpen(false)}
+          />
 
-    return (
-        <div className="relative">
+          {/* Analysis Card */}
+          <div className="relative w-full max-w-2xl bg-zinc-900 border border-white/10 rounded-[2.5rem] p-8 shadow-[0_0_50px_rgba(0,0,0,0.5)] animate-in zoom-in-95 duration-200 overflow-hidden">
             <button 
-                onClick={() => setIsOpen(!isOpen)}
-                className="flex items-center gap-3 px-8 py-4 bg-white text-black rounded-full font-black uppercase italic hover:scale-105 transition-all shadow-xl"
+              onClick={() => setIsOpen(false)}
+              className="absolute top-6 right-6 p-2 text-zinc-500 hover:text-white transition-colors"
             >
-                <Zap className={isOpen ? "fill-purple-600" : "fill-black"} size={18} />
-                {isOpen ? 'Close Analysis' : 'Run Elite Analysis'}
+              <X size={24} />
             </button>
 
-            {isOpen && (
-                <div className="absolute top-full mt-6 right-0 w-[400px] bg-zinc-900 border border-white/10 rounded-[2rem] p-8 shadow-3xl z-50">
-                    <h3 className="text-xl font-black uppercase italic mb-4">Position Insight</h3>
-                    
-                    {isLoading ? (
-                        <div className="flex flex-col items-center py-10 gap-4">
-                            <Loader2 className="animate-spin text-purple-500" />
-                            <p className="text-[10px] uppercase font-bold text-zinc-500">Syncing with Arbitrum Node...</p>
-                        </div>
-                    ) : isConnected ? (
-                        <div className="space-y-6">
-                            <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
-                                <p className="text-[10px] text-zinc-500 uppercase font-black mb-1">Health Factor</p>
-                                <p className={`text-2xl font-mono font-black ${healthFactor > 2 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                    {healthFactor > 100 ? '∞' : healthFactor.toFixed(2)}
-                                </p>
-                            </div>
+            <h3 className="text-3xl font-black italic uppercase mb-8 tracking-tighter text-white">
+              Sentinel <span className="text-zinc-500">Elite</span> Analysis
+            </h3>
 
-                            <div className="p-4 bg-purple-500/10 rounded-2xl border border-purple-500/20">
-                                <div className="flex items-center gap-2 text-purple-400 mb-2">
-                                    <ShieldAlert size={14} />
-                                    <span className="text-[10px] font-black uppercase">Elite Recommendation</span>
-                                </div>
-                                <p className="text-xs text-zinc-300 italic leading-relaxed">
-                                    {hasDebt 
-                                        ? "Positions detected: Your WBTC debt effectively shorts the asset. A market crash will increase your safety margin."
-                                        : "No active debt. Your USDC collateral is idle. Consider a low-LTV borrow to increase capital efficiency."}
-                                </p>
-                            </div>
-                        </div>
-                    ) : (
-                        <p className="text-zinc-500 italic text-sm text-center">Please connect wallet to analyze risk.</p>
-                    )}
+            {/* Position List */}
+            <div className="space-y-4 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
+              {isLoading ? (
+                <p className="text-zinc-500 italic animate-pulse">Syncing Aave Protocol Data...</p>
+              ) : positions.length > 0 ? (
+                positions.map((pos) => (
+                  <div key={pos.symbol} className="p-6 bg-white/5 rounded-3xl border border-white/5 hover:border-purple-500/30 transition-all group">
+                    <div className="flex justify-between items-center mb-3">
+                      <span className="text-xl font-black uppercase italic text-white">{pos.symbol}</span>
+                      <span className={`text-[10px] px-3 py-1 rounded-full font-black uppercase ${
+                        pos.debt > 0 ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'
+                      }`}>
+                        {pos.debt > 0 ? 'Short/Debt' : 'Long/Collateral'}
+                      </span>
+                    </div>
+                    <p className="text-sm text-zinc-400 leading-relaxed italic group-hover:text-zinc-200 transition-colors">
+                      "{pos.implication}"
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-zinc-500 italic">No active positions found in this wallet.</p>
+              )}
+            </div>
+
+            {/* Global Summary */}
+            {!isLoading && positions.length > 0 && (
+              <div className="mt-8 pt-6 border-t border-white/5">
+                <div className="flex items-center gap-3 p-4 bg-purple-500/10 rounded-2xl border border-purple-500/20">
+                  <ShieldAlert className="text-purple-400 shrink-0" size={20} />
+                  <p className="text-xs text-zinc-300 italic font-medium leading-relaxed">
+                    Agent Intelligence: Your USDC collateral is currently stabilizing a WBTC debt. 
+                    This setup means you are mathematically safer during a market crash.
+                  </p>
                 </div>
+              </div>
             )}
+          </div>
         </div>
-    );
+      )}
+    </>
+  );
 }
