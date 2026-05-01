@@ -38,28 +38,28 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
     setError(null);
 
     try {
-      const initialBody = { address: target };
+      // 1. Initial request to get the session requirements
       const first = await fetch("/api/agent/premium-analysis", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(initialBody),
+        body: JSON.stringify({ address: target }),
       });
 
       if (first.status === 402) {
         const offer = await first.json();
         
-        // 1. Force use of the verified checksummed address from image_651dc0.png
+        // Use the strict checksummed address from your wallet capture
         const payToAddress = "0xfed63f59b12f22e517b82f0d185b137ad01b3fd4"; 
-
         const network = getNetwork("arbitrum-one");
         const now = Math.floor(Date.now() / 1000);
         
+        // We use a long 1-hour window to eliminate "expired signature" errors from clock drift
         const auth = {
           from: connected,
           to: payToAddress as `0x${string}`,
-          value: "10000", // Exactly 0.01 USDC
+          value: "10000", // 0.01 USDC
           validAfter: "0",
-          validBefore: String(now + 3600), // 1 hour window to prevent settlement failure
+          validBefore: String(now + 3600), 
           nonce: generateNonce(),
         };
 
@@ -73,7 +73,7 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
           payload: { signature, authorization: auth },
         } as const;
 
-        // 2. Final Settlement Call with extended body for backend validation
+        // 2. Final Settlement: We pass the auth details in the body to force backend alignment
         const second = await fetch("/api/agent/premium-analysis", {
           method: "POST",
           headers: {
@@ -81,17 +81,18 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
             [X_PAYMENT_HEADER]: encodePaymentHeader(payload as unknown as PaymentPayload),
           },
           body: JSON.stringify({ 
-            ...initialBody,
+            address: target,
             settlement: {
               to: payToAddress,
-              amount: "10000"
+              amount: "10000",
+              nonce: auth.nonce
             }
           }),
         });
 
         if (!second.ok) {
-          const errDetail = await second.json();
-          throw new Error(errDetail.message || "Agentic settlement failed.");
+          const details = await second.json().catch(() => ({}));
+          throw new Error(details.message || "Agentic settlement failed.");
         }
         
         const resultData = await second.json();
@@ -135,7 +136,7 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
         {trace && <ToolTrace name={trace.name} args={trace.args} result={trace.result} />}
 
         {data && (
-          <div className="mt-8 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+          <div className="mt-8 space-y-6">
              <div className="grid grid-cols-2 gap-4">
                 <div className="bg-zinc-950 p-4 rounded-xl border border-white/5">
                    <div className="text-[10px] text-purple-400 font-bold uppercase mb-1">Utilization</div>
