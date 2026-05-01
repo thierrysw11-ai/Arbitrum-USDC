@@ -1,6 +1,7 @@
 import { useAccount, useReadContract } from 'wagmi';
 import { formatUnits } from 'viem';
 
+// AAVE V3 Arbitrum Core Addresses
 const DATA_PROVIDER = '0x69FA688f1Dc474759186cFE4639561726763631C';
 const POOL_ADDRESS = '0x794a61358D6845594F94dc1DB02A252b5b4814aD';
 
@@ -27,36 +28,43 @@ const ABI = [{
 }] as const;
 
 export function useUserPositions() {
-    const { address } = useAccount();
+    const { address, isConnected } = useAccount();
 
-    const { data, isLoading } = useReadContract({
+    const { data, isLoading, isError } = useReadContract({
         address: DATA_PROVIDER,
         abi: ABI,
         functionName: 'getUserReservesData',
         args: address ? [POOL_ADDRESS, address] : undefined,
-        query: { enabled: !!address }
+        query: { 
+            enabled: !!address && isConnected,
+            staleTime: 5000 
+        }
     });
 
-    const getPlainEnglish = (symbol: string, isDebt: boolean) => {
-        if (symbol === 'USDC' && !isDebt) return "Stability anchor. Your dollar-pegged collateral keeps you safe from market swings.";
-        if (symbol === 'WBTC' && isDebt) return "Strategic debt. You've borrowed Bitcoin, meaning you're effectively 'shorting' it—if BTC drops, your debt gets cheaper.";
-        return isDebt ? "Active loan that requires monitoring." : "Asset provided as collateral.";
+    const getImplication = (symbol: string, isDebt: boolean) => {
+        if (symbol.includes('USDC')) return "Stability anchor. Protects your Health Factor from market volatility.";
+        if (symbol.includes('BTC')) return "Strategic short. Your debt actually shrinks if Bitcoin's price drops.";
+        return isDebt ? "Variable rate loan." : "Collateral asset.";
     };
 
-    // We filter for any balance that is strictly greater than zero (BigInt 0n)
-    const rawPositions = data?.[0] || [];
-    const positions = rawPositions
+    // Filter logic specifically targeting non-zero BigInts
+    const positions = (data?.[0] || [])
         .filter(res => res.currentATokenBalance > 0n || res.currentVariableDebt > 0n)
         .map(res => {
             const isDebt = res.currentVariableDebt > 0n;
-            const amount = isDebt ? res.currentVariableDebt : res.currentATokenBalance;
+            const balance = isDebt ? res.currentVariableDebt : res.currentATokenBalance;
+            
             return {
                 symbol: res.symbol,
-                amount: Number(formatUnits(amount, Number(res.decimals))),
+                amount: formatUnits(balance, Number(res.decimals)),
                 isDebt,
-                implication: getPlainEnglish(res.symbol, isDebt)
+                implication: getImplication(res.symbol, isDebt)
             };
         });
 
-    return { positions, isLoading };
+    return { 
+        positions, 
+        isLoading: isLoading && isConnected,
+        isError 
+    };
 }
