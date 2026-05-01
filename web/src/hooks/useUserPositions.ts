@@ -1,12 +1,7 @@
 import { useAccount } from 'wagmi';
 import { useState, useEffect } from 'react';
 
-/**
- * ELITE SUBGRAPH INTEGRATION
- * Pulls directly from the decentralized Graph network using your 
- * unique API key and Subgraph IDs.
- */
-const AAVE_SUBGRAPH_URL = process.env.NEXT_PUBLIC_AAVE_SUBGRAPH_URL || "https://gateway.thegraph.com/api/667145d8096c00f8dbc45f26fd93d415/subgraphs/id/Hr4ZdBkwkeENLSXwRLCPUQ1Xh5ep9S36dMz7PMcxwCp3";
+const AAVE_URL = process.env.NEXT_PUBLIC_AAVE_SUBGRAPH_URL!;
 
 export interface UserPosition {
   symbol: string;
@@ -21,7 +16,6 @@ export function useUserPositions() {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    // Only fetch if the wallet is connected and address exists
     if (!address || !isConnected) {
       setPositions([]);
       return;
@@ -30,14 +24,12 @@ export function useUserPositions() {
     const fetchSentinelData = async () => {
       setIsLoading(true);
       try {
-        /**
-         * Querying the 'account' entity to get all lending and borrowing 
-         * positions associated with the current wallet.
-         */
+        // This query matches the 'account' and 'positions' fields from your screenshot
         const query = `
-          query GetUserSentinelData($user: String!) {
+          query GetUserPositions($user: String!) {
             account(id: $user) {
               positions {
+                hash
                 side
                 balance
                 asset {
@@ -49,7 +41,7 @@ export function useUserPositions() {
           }
         `;
 
-        const response = await fetch(AAVE_SUBGRAPH_URL, {
+        const response = await fetch(AAVE_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
@@ -58,41 +50,34 @@ export function useUserPositions() {
           }),
         });
 
-        const json = await response.json();
-        const rawPositions = json.data?.account?.positions || [];
+        const { data } = await response.json();
+        
+        if (data?.account?.positions) {
+          const formatted = data.account.positions
+            .filter((p: any) => BigInt(p.balance) > 0n)
+            .map((p: any) => {
+              const isDebt = p.side === 'BORROWER';
+              const symbol = p.asset.symbol;
+              const decimals = p.asset.decimals;
+              
+              // Standardizing balance calculation
+              const amount = (Number(p.balance) / Math.pow(10, decimals)).toFixed(4);
 
-        const formattedPositions = rawPositions.map((p: any) => {
-          const isDebt = p.side === 'BORROWER';
-          const symbol = p.asset.symbol;
-          
-          // Format balance based on asset decimals
-          const amount = (Number(p.balance) / Math.pow(10, p.asset.decimals)).toFixed(4);
-
-          // Generate AI-style implications for the Sentinel UI
-          let implication = "";
-          if (symbol.includes('USDC')) {
-            implication = "Core Liquidity Shield. This collateral is currently neutralizing your liquidation risk.";
-          } else if (symbol.includes('BTC') || symbol.includes('ETH')) {
-            implication = isDebt 
-              ? "Short-bias exposure. You are effectively shorting this asset against your stable collateral."
-              : "High-conviction collateral. Volatility in this asset heavily impacts your Health Factor.";
-          } else {
-            implication = isDebt 
-              ? "Standard liability. Interest is accruing on this borrow position."
-              : "Yield-bearing asset. Contributing to your total borrowing power.";
-          }
-
-          return {
-            symbol,
-            amount,
-            isDebt,
-            implication
-          };
-        });
-
-        setPositions(formattedPositions);
-      } catch (error) {
-        console.error("Sentinel Analysis: Subgraph link failed", error);
+              return {
+                symbol,
+                amount,
+                isDebt,
+                implication: symbol.includes('USDC') 
+                  ? "Collateral Base: This stable liquidity is your primary defense against market volatility."
+                  : isDebt 
+                  ? "Variable Liability: Strategic debt position. Performance is linked to market drawdown."
+                  : "Growth Collateral: High-utility asset increasing your total borrowing power."
+              };
+            });
+          setPositions(formatted);
+        }
+      } catch (err) {
+        console.error("Sentinel Analysis Error:", err);
       } finally {
         setIsLoading(false);
       }
@@ -101,9 +86,5 @@ export function useUserPositions() {
     fetchSentinelData();
   }, [address, isConnected]);
 
-  return { 
-    positions, 
-    isLoading,
-    hasPositions: positions.length > 0 
-  };
+  return { positions, isLoading, hasPositions: positions.length > 0 };
 }
