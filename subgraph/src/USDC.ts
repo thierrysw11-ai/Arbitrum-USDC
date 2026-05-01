@@ -1,7 +1,9 @@
-// Build: v0.5.0 (2026-04-27) — force-republish to land a fresh deployment ID
-// on the decentralized network. Adds a structured whale-transfer log with
-// from/to addresses (was just value+tx in v0.3.1) so the compiled WASM hash
-// genuinely differs from the previously-published version.
+// Build: v0.7.0 (2026-04-28) — bumps startBlock from 22,207,880 (~April 2024)
+// to 454,200,000 (~9 days behind head) so the indexer reaches head in minutes
+// rather than days. Trade-off: only ~9d of history visible at launch, but the
+// 24H + 7D charts and whale feed render live data immediately. The 30D chart
+// will fill in over the coming weeks. BUILD_TAG bumped to force a fresh WASM
+// hash so the new deployment is distinct from v0.6.0.
 
 import { BigInt, log } from "@graphprotocol/graph-ts"
 import { Transfer } from "../generated/USDC/USDC"
@@ -13,7 +15,7 @@ import {
 // USDC is 6 decimals. Whale threshold = 1,000,000 USDC = 1e12 in raw units.
 const WHALE_THRESHOLD = BigInt.fromString("1000000000000")
 const HOUR = BigInt.fromI32(3600)
-const BUILD_TAG = "usdc-subgraph@v0.5.0"
+const BUILD_TAG = "usdc-subgraph@v0.7.0"
 
 export function handleTransfer(event: Transfer): void {
   // 1. Persist the raw Transfer event (immutable).

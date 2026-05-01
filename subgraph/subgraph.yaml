@@ -11,7 +11,7 @@ dataSources:
     source:
       address: "0xaf88d065e77c8cc2239327c5edb3a432268e5831" # USDC proxy on Arbitrum
       abi: USDC
-      startBlock: 22207880
+      startBlock: 454200000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7

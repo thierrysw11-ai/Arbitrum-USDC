@@ -31,7 +31,29 @@ on EIP-3009, and a polished Next.js frontend with full error / loading
 boundaries.
 
 ![architecture](docs/architecture.svg)
-<!-- add a screenshot here once deployed — see docs/SCREENSHOTS.md -->
+
+---
+
+## Live demo
+
+- **Live URL:** <https://arbitrum-usdc.vercel.app>
+- **75-second walkthrough (Loom):** <!-- replace with Loom URL --> _coming soon_
+- **GitHub:** <https://github.com/thierrysw11-ai/Arbitrum-USDC>
+
+The live deployment is **fully wired to mainnet Arbitrum** — wallet connect,
+Aave V3 reads, USDC transfers, and the Sentinel agent all hit production
+infrastructure. To see your own position, connect a wallet on Arbitrum One
+and visit `/portfolio`. To inspect any address without connecting, use
+spectator mode: `/portfolio?address=0xYOUR_ADDRESS`.
+
+| Surface       | What it proves                                                                                                |
+| ------------- | -------------------------------------------------------------------------------------------------------------- |
+| `/`           | Dashboard — Aave V3 risk gauge across 20 reserves + $1.4 B of USDC volume from a custom subgraph.            |
+| `/portfolio`  | Live health factor from `getUserAccountData` via viem. Multi-asset price-shock simulator with real liq math. |
+| `/send`       | ERC-20 write flow — wagmi v2, balance cap, Arbiscan confirmation.                                             |
+| **Sentinel**  | Anthropic Claude agent on every page. Tool-use loop reads on-chain data; numerically grounded.               |
+
+Screenshots: see [`docs/SCREENSHOTS.md`](./docs/SCREENSHOTS.md) for the six-shot set.
 
 ---
 
@@ -167,8 +189,10 @@ deploy → WalletConnect project → Vercel).
 - [`docs/DEPLOY.md`](./docs/DEPLOY.md) — step-by-step deploy runbook.
 - [`docs/SCREENSHOTS.md`](./docs/SCREENSHOTS.md) — the six screenshots to
   capture for the portfolio README.
-- [`docs/DEMO_SCRIPT.md`](./docs/DEMO_SCRIPT.md) — 28-second screen-recording
-  storyboard.
+- [`docs/DEMO_SCRIPT.md`](./docs/DEMO_SCRIPT.md) — 28-second silent
+  screen-recording storyboard (LinkedIn autoplay).
+- [`docs/LOOM_SCRIPT.md`](./docs/LOOM_SCRIPT.md) — 75-second narrated Loom
+  walkthrough (README hero).
 - [`docs/LINKEDIN_POST.md`](./docs/LINKEDIN_POST.md) — three portfolio post
   drafts (concise / story-led / technical).
 
