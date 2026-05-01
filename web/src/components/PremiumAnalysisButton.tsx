@@ -4,15 +4,14 @@ import { useState } from "react";
 import { useAccount, useSignTypedData } from "wagmi";
 import { buildTransferAuthorizationTypedData } from "@/lib/x402/eip3009";
 import { getNetwork } from "@/lib/x402/networks";
-import ToolTrace from "./agent/ToolTrace"; //
+import ToolTrace from "./agent/ToolTrace"; 
 import {
   X_PAYMENT_HEADER,
-  X_PAYMENT_RESPONSE_HEADER,
   encodePaymentHeader,
   generateNonce,
 } from "@/lib/x402/scheme";
+import type { PaymentPayload } from "@/lib/x402/types";
 
-//
 interface SentinelEliteResponse {
   utilization: number;
   slope2: number;
@@ -39,7 +38,6 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
     setError(null);
 
     try {
-      // 1. Initial Call
       const initialBody = { address: target };
       const first = await fetch("/api/agent/premium-analysis", {
         method: "POST",
@@ -51,7 +49,7 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
         const offer = await first.json();
         const requirement = offer.accepts.find((r: any) => r.network === "arbitrum-one");
 
-        // - Fixes the 0x000 issue by ensuring we have the address from image_651dc0.png
+        // Fixes the 0x000 issue using address from image_651dc0.png
         const payToAddress = requirement?.payTo || "0xFED63F59b12f22e517b82F0d185B137aD01b3Fd4"; 
 
         const network = getNetwork("arbitrum-one");
@@ -68,30 +66,33 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
         const typedData = buildTransferAuthorizationTypedData(network, auth);
         const signature = await signTypedDataAsync(typedData);
 
+        // Fixed with 'as const' to resolve the TypeScript Build Error
         const payload = {
           x402Version: 1,
           scheme: "exact",
           network: "arbitrum-one",
           payload: { signature, authorization: auth },
-        };
+        } as const;
 
-        // 2. Final Settlement
         const second = await fetch("/api/agent/premium-analysis", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            [X_PAYMENT_HEADER]: encodePaymentHeader(payload),
+            [X_PAYMENT_HEADER]: encodePaymentHeader(payload as unknown as PaymentPayload),
           },
           body: JSON.stringify(initialBody),
         });
 
+        if (!second.ok) throw new Error("Agentic settlement failed.");
+        
         const resultData = await second.json();
         setData(resultData);
-        // - Log the success to the trace
         setTrace({ name: "x402_settlement", args: auth, result: resultData });
+      } else {
+        setData(await first.json());
       }
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || "Unknown error");
     } finally {
       setLoading(false);
     }
@@ -102,26 +103,46 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
       <div className="rounded-3xl border border-purple-500/30 bg-zinc-900/50 p-8 shadow-2xl backdrop-blur-md">
         <div className="flex justify-between items-center mb-10">
           <div>
-            <h2 className="text-3xl font-black text-white uppercase italic">Sentinel Elite Analysis</h2>
-            <p className="text-zinc-400 text-sm">Advanced risk modeling for WBTC/USDC.</p>
+            <h2 className="text-3xl font-black text-white uppercase italic tracking-tighter">
+              Sentinel Elite Analysis
+            </h2>
+            <p className="text-zinc-400 text-sm">Real-time risk modeling for WBTC/USDC.</p>
           </div>
           <button
             onClick={runAnalysis}
-            disabled={loading}
+            disabled={loading || !target}
             className="bg-gradient-to-r from-purple-600 to-indigo-600 px-8 py-3 rounded-2xl font-black text-xs uppercase tracking-widest text-white transition-all active:scale-95 disabled:opacity-50"
           >
-            {loading ? "Settling..." : "Execute Deep-Dive (0.01 USDC)"}
+            {loading ? "Settling x402..." : "Execute Deep-Dive (0.01 USDC)"}
           </button>
         </div>
 
-        {/* - Tool Trace Debugging */}
+        {error && (
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs font-mono">
+            SYSTEM_ERROR: {error}
+          </div>
+        )}
+
         {trace && <ToolTrace name={trace.name} args={trace.args} result={trace.result} />}
 
-        {/* - Render logic for matrix data goes here */}
         {data && (
-           <div className="mt-6 text-emerald-400 font-mono">
-             Analysis Complete: Utilization {data.utilization}%
-           </div>
+          <div className="mt-8 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+             <div className="grid grid-cols-2 gap-4">
+                <div className="bg-zinc-950 p-4 rounded-xl border border-white/5">
+                   <div className="text-[10px] text-purple-400 font-bold uppercase mb-1">Utilization</div>
+                   <div className="text-2xl font-mono font-bold text-white">{data.utilization}%</div>
+                </div>
+                <div className="bg-zinc-950 p-4 rounded-xl border border-white/5">
+                   <div className="text-[10px] text-emerald-400 font-bold uppercase mb-1">Efficiency Spread</div>
+                   <div className="text-2xl font-mono font-bold text-white">+{data.apySpread}%</div>
+                </div>
+             </div>
+             <div className="bg-white/5 p-4 rounded-xl border border-purple-500/20">
+                <p className="text-xs text-zinc-300 leading-relaxed italic">
+                  <strong className="text-purple-400 not-italic">GUARDIAN_NOTE:</strong> {data.note}
+                </p>
+             </div>
+          </div>
         )}
       </div>
     </div>
