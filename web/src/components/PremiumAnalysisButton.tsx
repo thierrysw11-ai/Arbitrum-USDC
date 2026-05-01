@@ -23,6 +23,13 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
 
   const target = address || connected;
 
+  // Helper to determine risk color
+  const getRiskColor = (hf: number) => {
+    if (hf > 2.5) return "text-emerald-400";
+    if (hf > 1.5) return "text-yellow-400";
+    return "text-red-500";
+  };
+
   async function runAnalysis() {
     if (!target || !connected) return;
     setLoading(true);
@@ -38,7 +45,6 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
       if (first.status === 402) {
         const { accepts } = await first.json();
         const req = accepts.find((a: any) => a.network === "arbitrum-one");
-        
         if (!req) throw new Error("Payment requirements mismatch.");
 
         const network = getNetwork("arbitrum-one");
@@ -70,7 +76,6 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
         });
 
         if (!second.ok) throw new Error("Agentic settlement failed.");
-        
         const resultData = await second.json();
         setData(resultData);
         setTrace({ name: "x402_settlement", args: auth, result: resultData });
@@ -92,7 +97,7 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
             <h2 className="text-3xl font-black text-white uppercase italic tracking-tighter">
               Sentinel Elite Analysis
             </h2>
-            <p className="text-zinc-400 text-sm">Real-time risk modeling for your USDC positions.</p>
+            <p className="text-zinc-400 text-sm">Actionable risk intelligence for your positions.</p>
           </div>
           <button
             onClick={runAnalysis}
@@ -113,35 +118,55 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
 
         {data && (
           <div className="mt-8 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-zinc-950 p-4 rounded-xl border border-white/5">
-                <div className="text-[10px] text-purple-400 font-bold uppercase mb-1">Current Health Factor</div>
-                <div className="text-2xl font-mono font-bold text-white">
-                  {data.currentHealthFactor?.toFixed(3) || 'N/A'}
-                </div>
-              </div>
-              <div className="bg-zinc-950 p-4 rounded-xl border border-white/5">
-                <div className="text-[10px] text-emerald-400 font-bold uppercase mb-1">Max Simulation Shock</div>
-                <div className="text-2xl font-mono font-bold text-white">
-                  {data.shockMatrix?.[0]?.shockPct || '0'}%
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white/5 p-5 rounded-xl border border-purple-500/20">
-              <div className="text-[10px] text-zinc-500 font-bold uppercase mb-3">Shock Matrix Projection</div>
-              <div className="space-y-3">
-                {data.shockMatrix?.map((m: any, i: number) => (
-                  <div key={i} className="flex justify-between items-center text-xs font-mono border-b border-white/5 pb-2 last:border-0">
-                    <span className="text-zinc-400">Price {m.shockPct}%:</span>
-                    <div className="flex gap-4">
-                      <span className="text-zinc-300">HF: {m.projectedHealthFactor?.toFixed(3)}</span>
-                      <span className={m.liquidatable ? "text-red-500 font-bold" : "text-emerald-500"}>
-                        {m.liquidatable ? "LIQUIDATABLE" : "SAFE"}
-                      </span>
+            {/* Visual Risk Gauge */}
+            <div className="bg-zinc-950 p-6 rounded-2xl border border-white/5 relative overflow-hidden">
+               <div className="flex justify-between items-end mb-4">
+                  <div>
+                    <div className="text-[10px] text-zinc-500 font-bold uppercase mb-1">Position Health Score</div>
+                    <div className={`text-4xl font-mono font-black ${getRiskColor(data.currentHealthFactor)}`}>
+                      {data.currentHealthFactor?.toFixed(2)}
                     </div>
                   </div>
-                ))}
+                  <div className="text-right">
+                    <div className="text-[10px] text-zinc-500 font-bold uppercase mb-1">Max Drawdown Tolerance</div>
+                    <div className="text-xl font-mono font-bold text-white">-{data.shockMatrix?.[0]?.shockPct || '0'}%</div>
+                  </div>
+               </div>
+               {/* Simple CSS Gauge */}
+               <div className="h-2 w-full bg-zinc-800 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full transition-all duration-1000 ${data.currentHealthFactor > 2 ? 'bg-emerald-500' : 'bg-red-500'}`}
+                    style={{ width: `${Math.min((data.currentHealthFactor / 5) * 100, 100)}%` }}
+                  />
+               </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Strategy Recommendations */}
+              <div className="bg-white/5 p-5 rounded-xl border border-purple-500/20">
+                <div className="text-[10px] text-purple-400 font-bold uppercase mb-3">Guardian Recommendation</div>
+                <div className="text-sm text-zinc-300 leading-relaxed italic">
+                  {data.currentHealthFactor < 1.5 
+                    ? "URGENT: Health factor low. Add collateral or reduce debt to avoid liquidation in a high-volatility event."
+                    : data.currentHealthFactor > 3.0 
+                    ? "Under-leveraged: Your position is highly safe. You could potentially increase size by 15% to optimize yield."
+                    : "Stable: Maintain current levels. Rebalance if Health Factor drops below 1.8."}
+                </div>
+              </div>
+
+              {/* Price Shock Table */}
+              <div className="bg-white/5 p-5 rounded-xl border border-white/5">
+                <div className="text-[10px] text-zinc-500 font-bold uppercase mb-3">Volatility Stress Test</div>
+                <div className="space-y-2">
+                  {data.shockMatrix?.slice(0, 3).map((m: any, i: number) => (
+                    <div key={i} className="flex justify-between text-[11px] font-mono border-b border-white/5 pb-1 last:border-0">
+                      <span className="text-zinc-400">{m.shockPct}% Price Drop:</span>
+                      <span className={m.liquidatable ? "text-red-500 font-bold" : "text-emerald-500"}>
+                        HF {m.projectedHealthFactor?.toFixed(2)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
