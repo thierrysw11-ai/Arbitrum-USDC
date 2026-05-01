@@ -47,28 +47,25 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
 
       if (first.status === 402) {
         const offer = await first.json();
-        const requirement = offer.accepts.find((r: any) => r.network === "arbitrum-one");
-
-        // Fixes the 0x000 issue using address from image_651dc0.png
-        const payToAddress = (requirement?.payTo && requirement.payTo !== "0x0000000000000000000000000000000000000000") 
-  ? requirement.payTo 
-  : "0xFED63F59b12f22e517b82F0d185B137aD01b3Fd4";
+        
+        // 1. Force use of the verified checksummed address from image_651dc0.png
+        const payToAddress = "0xFED63f59B12F22e517B82F0D185B137Ad01b3Fd4"; 
 
         const network = getNetwork("arbitrum-one");
         const now = Math.floor(Date.now() / 1000);
-	const auth = {
-  	from: connected,
-  	to: payToAddress as `0x${string}`,
-  	value: "10000", // Exactly 0.01 USDC (10,000 / 10^6)
-  	validAfter: "0",
-  	validBefore: String(now + 300),
-  	nonce: generateNonce(),
-	};
+        
+        const auth = {
+          from: connected,
+          to: payToAddress as `0x${string}`,
+          value: "10000", // Exactly 0.01 USDC
+          validAfter: "0",
+          validBefore: String(now + 3600), // 1 hour window to prevent settlement failure
+          nonce: generateNonce(),
+        };
 
         const typedData = buildTransferAuthorizationTypedData(network, auth);
         const signature = await signTypedDataAsync(typedData);
 
-        // Fixed with 'as const' to resolve the TypeScript Build Error
         const payload = {
           x402Version: 1,
           scheme: "exact",
@@ -76,16 +73,26 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
           payload: { signature, authorization: auth },
         } as const;
 
+        // 2. Final Settlement Call with extended body for backend validation
         const second = await fetch("/api/agent/premium-analysis", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             [X_PAYMENT_HEADER]: encodePaymentHeader(payload as unknown as PaymentPayload),
           },
-          body: JSON.stringify(initialBody),
+          body: JSON.stringify({ 
+            ...initialBody,
+            settlement: {
+              to: payToAddress,
+              amount: "10000"
+            }
+          }),
         });
 
-        if (!second.ok) throw new Error("Agentic settlement failed.");
+        if (!second.ok) {
+          const errDetail = await second.json();
+          throw new Error(errDetail.message || "Agentic settlement failed.");
+        }
         
         const resultData = await second.json();
         setData(resultData);
@@ -108,7 +115,7 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
             <h2 className="text-3xl font-black text-white uppercase italic tracking-tighter">
               Sentinel Elite Analysis
             </h2>
-            <p className="text-zinc-400 text-sm">Real-time risk modeling for WBTC/USDC.</p>
+            <p className="text-zinc-400 text-sm">Real-time risk modeling for your USDC positions.</p>
           </div>
           <button
             onClick={runAnalysis}
