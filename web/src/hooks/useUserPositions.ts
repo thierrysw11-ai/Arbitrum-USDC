@@ -3,47 +3,36 @@ import { useState, useEffect } from 'react';
 
 const AAVE_URL = process.env.NEXT_PUBLIC_AAVE_SUBGRAPH_URL!;
 
-export interface UserPosition {
-  symbol: string;
-  amount: string;
-  isDebt: boolean;
-  implication: string;
-}
-
 export function useUserPositions() {
   const { address, isConnected } = useAccount();
-  const [positions, setPositions] = useState<UserPosition[]>([]);
+  const [positions, setPositions] = useState<any[]>([]);
+  const [marketTrends, setMarketTrends] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (!address || !isConnected) {
-      setPositions([]);
-      return;
-    }
+    if (!address || !isConnected) return;
 
-    const fetchSentinelData = async () => {
+    const fetchSentinelIntelligence = async () => {
       setIsLoading(true);
       try {
-        // We query 'accounts' as a list filtered by ID to bypass the 'account: null' issue
         const query = `
-          query GetUserSentinel($user: String!) {
+          query GetSentinelIntelligence($user: String!) {
+            # User Personal Data
             accounts(where: { id: $user }) {
               supplies(orderBy: timestamp, orderDirection: desc) {
                 amount
-                timestamp
-                reserve {
-                  symbol
-                  decimals
-                }
+                reserve { symbol decimals }
               }
               borrows(orderBy: timestamp, orderDirection: desc) {
                 amount
-                timestamp
-                reserve {
-                  symbol
-                  decimals
-                }
+                reserve { symbol decimals }
               }
+            }
+            # Global Market Context (from your screenshot)
+            hourlyVolumes(first: 1, orderBy: hourStartTimestamp, orderDirection: desc) {
+              totalVolume
+              whaleVolume
+              transferCount
             }
           }
         `;
@@ -51,66 +40,45 @@ export function useUserPositions() {
         const response = await fetch(AAVE_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            query, 
-            variables: { user: address.toLowerCase() } 
-          }),
+          body: JSON.stringify({ query, variables: { user: address.toLowerCase() } }),
         });
 
         const { data } = await response.json();
-        
-        // Since we query 'accounts' (plural), we take the first result
         const userData = data?.accounts?.[0];
-        const finalPositions: UserPosition[] = [];
+        const globalVolume = data?.hourlyVolumes?.[0];
 
-        if (userData) {
-          // 1. Process Supply Events (Collateral)
-          const seenSupplies = new Set();
-          userData.supplies?.forEach((s: any) => {
-            if (!seenSupplies.has(s.reserve.symbol)) {
-              const amount = (Number(s.amount) / Math.pow(10, s.reserve.decimals)).toFixed(4);
-              if (Number(amount) > 0) {
-                finalPositions.push({
-                  symbol: s.reserve.symbol,
-                  amount,
-                  isDebt: false,
-                  implication: s.reserve.symbol.includes('USDC') 
-                    ? "Core Liquidity Shield. This stable collateral protects your health factor from market volatility." 
-                    : "Growth-oriented collateral asset increasing your total borrowing power."
-                });
-                seenSupplies.add(s.reserve.symbol);
-              }
-            }
-          });
-
-          // 2. Process Borrow Events (Debt)
-          const seenBorrows = new Set();
-          userData.borrows?.forEach((b: any) => {
-            if (!seenBorrows.has(b.reserve.symbol)) {
-              const amount = (Number(b.amount) / Math.pow(10, b.reserve.decimals)).toFixed(4);
-              if (Number(amount) > 0) {
-                finalPositions.push({
-                  symbol: b.reserve.symbol,
-                  amount,
-                  isDebt: true,
-                  implication: "Strategic Debt Position. Mathematically hedged against broader market drawdowns."
-                });
-                seenBorrows.add(b.reserve.symbol);
-              }
-            }
-          });
-        }
-
+        // Process positions and generate the "Agent Assessment"
+        const finalPositions = processPositions(userData, globalVolume);
         setPositions(finalPositions);
+        setMarketTrends(globalVolume);
       } catch (err) {
-        console.error("Sentinel Analysis Error:", err);
+        console.error("Sentinel Intelligence Error:", err);
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchSentinelData();
+    fetchSentinelIntelligence();
   }, [address, isConnected]);
 
-  return { positions, isLoading, hasPositions: positions.length > 0 };
+  return { positions, marketTrends, isLoading };
+}
+
+// Logic to generate the "Agent Assessment" sentences seen in image_3bbbe3.png
+function processPositions(userData: any, globalVolume: any) {
+  const processed: any[] = [];
+  if (!userData) return [];
+
+  // Example logic for USDC Collateral mapping to your UI
+  userData.supplies?.forEach((s: any) => {
+    processed.push({
+      symbol: s.reserve.symbol,
+      amount: (Number(s.amount) / Math.pow(10, s.reserve.decimals)).toFixed(4),
+      isDebt: false,
+      type: "MARKET EXPOSURE",
+      assessment: `Core Liquidity Shield. Current protocol whale volume is ${globalVolume?.whaleVolume || 'stable'}, protecting your health factor.`
+    });
+  });
+
+  return processed;
 }
