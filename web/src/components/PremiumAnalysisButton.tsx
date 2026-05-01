@@ -39,7 +39,7 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
         const { accepts } = await first.json();
         const req = accepts.find((a: any) => a.network === "arbitrum-one");
         
-        if (!req) throw new Error("Arbitrum payment required but not supported.");
+        if (!req) throw new Error("Payment requirements mismatch.");
 
         const network = getNetwork("arbitrum-one");
         const auth = {
@@ -51,8 +51,7 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
           nonce: generateNonce(),
         };
 
-        const typedData = buildTransferAuthorizationTypedData(network, auth);
-        const signature = await signTypedDataAsync(typedData);
+        const signature = await signTypedDataAsync(buildTransferAuthorizationTypedData(network, auth));
 
         const payload = {
           x402Version: 1,
@@ -79,7 +78,7 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
         setData(await first.json());
       }
     } catch (err: any) {
-      setError(err.message || "Unknown error");
+      setError(err.message || "Deep-dive execution failed.");
     } finally {
       setLoading(false);
     }
@@ -100,7 +99,7 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
             disabled={loading || !target}
             className="bg-gradient-to-r from-purple-600 to-indigo-600 px-8 py-3 rounded-2xl font-black text-xs uppercase tracking-widest text-white transition-all active:scale-95 disabled:opacity-50"
           >
-            {loading ? "Settling x402..." : "Execute Deep-Dive (0.01 USDC)"}
+            {loading ? "Settling..." : "Execute Deep-Dive (0.01 USDC)"}
           </button>
         </div>
 
@@ -116,13 +115,13 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
           <div className="mt-8 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-zinc-950 p-4 rounded-xl border border-white/5">
-                <div className="text-[10px] text-purple-400 font-bold uppercase mb-1">Health Factor</div>
+                <div className="text-[10px] text-purple-400 font-bold uppercase mb-1">Current Health Factor</div>
                 <div className="text-2xl font-mono font-bold text-white">
-                  {data.currentHealthFactor?.toFixed(3) || '0.000'}
+                  {data.currentHealthFactor?.toFixed(3) || 'N/A'}
                 </div>
               </div>
               <div className="bg-zinc-950 p-4 rounded-xl border border-white/5">
-                <div className="text-[10px] text-emerald-400 font-bold uppercase mb-1">Max Risk Shock</div>
+                <div className="text-[10px] text-emerald-400 font-bold uppercase mb-1">Max Simulation Shock</div>
                 <div className="text-2xl font-mono font-bold text-white">
                   {data.shockMatrix?.[0]?.shockPct || '0'}%
                 </div>
@@ -130,7 +129,7 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
             </div>
 
             <div className="bg-white/5 p-5 rounded-xl border border-purple-500/20">
-              <div className="text-[10px] text-zinc-500 font-bold uppercase mb-3">Shock Analysis Matrix</div>
+              <div className="text-[10px] text-zinc-500 font-bold uppercase mb-3">Shock Matrix Projection</div>
               <div className="space-y-3">
                 {data.shockMatrix?.map((m: any, i: number) => (
                   <div key={i} className="flex justify-between items-center text-xs font-mono border-b border-white/5 pb-2 last:border-0">
