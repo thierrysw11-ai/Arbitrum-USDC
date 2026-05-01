@@ -56,14 +56,14 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
 
         const network = getNetwork("arbitrum-one");
         const now = Math.floor(Date.now() / 1000);
-        const auth = {
-          from: connected,
-          to: payToAddress as `0x${string}`,
-          value: requirement?.maxAmountRequired || "10000",
-          validAfter: "0",
-          validBefore: String(now + 300),
-          nonce: generateNonce(),
-        };
+	const auth = {
+  	from: connected,
+  	to: payToAddress as `0x${string}`,
+  	value: "10000", // Exactly 0.01 USDC (10,000 / 10^6)
+  	validAfter: "0",
+  	validBefore: String(now + 300),
+  	nonce: generateNonce(),
+	};
 
         const typedData = buildTransferAuthorizationTypedData(network, auth);
         const signature = await signTypedDataAsync(typedData);
