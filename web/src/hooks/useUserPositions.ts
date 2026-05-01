@@ -1,8 +1,7 @@
 import { useAccount } from 'wagmi';
 import { useState, useEffect } from 'react';
 
-// Using the Aave Subgraph URL you provided
-const AAVE_URL = process.env.NEXT_PUBLIC_AAVE_SUBGRAPH_URL || "https://gateway.thegraph.com/api/667145d8096c00f8dbc45f26fd93d415/subgraphs/id/Hr4ZdBkwkeENLSXwRLCPUQ1Xh5ep9S36dMz7PMcxwCp3";
+const AAVE_URL = process.env.NEXT_PUBLIC_AAVE_SUBGRAPH_URL!;
 
 export interface UserPosition {
   symbol: string;
@@ -25,24 +24,25 @@ export function useUserPositions() {
     const fetchSentinelData = async () => {
       setIsLoading(true);
       try {
-        /**
-         * Schema Fix: Querying 'supplies' and 'borrows' directly.
-         * This avoids the "Cannot query field positions on type Account" error.
-         */
+        // We query 'accounts' as a list filtered by ID to bypass the 'account: null' issue
         const query = `
-          query GetUserSentinelData($user: String!) {
-            supplies(where: { account: $user }) {
-              amount
-              reserve {
-                symbol
-                decimals
+          query GetUserSentinel($user: String!) {
+            accounts(where: { id: $user }) {
+              supplies(orderBy: timestamp, orderDirection: desc) {
+                amount
+                timestamp
+                reserve {
+                  symbol
+                  decimals
+                }
               }
-            }
-            borrows(where: { account: $user }) {
-              amount
-              reserve {
-                symbol
-                decimals
+              borrows(orderBy: timestamp, orderDirection: desc) {
+                amount
+                timestamp
+                reserve {
+                  symbol
+                  decimals
+                }
               }
             }
           }
@@ -57,50 +57,53 @@ export function useUserPositions() {
           }),
         });
 
-        const { data, errors } = await response.json();
+        const { data } = await response.json();
         
-        if (errors) {
-          console.error("Subgraph Validation Error:", errors);
-          return;
-        }
-
+        // Since we query 'accounts' (plural), we take the first result
+        const userData = data?.accounts?.[0];
         const finalPositions: UserPosition[] = [];
 
-        // 1. Process Collateral (Supplies)
-        if (data?.supplies) {
-          data.supplies.forEach((s: any) => {
-            const amount = (Number(s.amount) / Math.pow(10, s.reserve.decimals)).toFixed(4);
-            if (Number(amount) > 0) {
-              finalPositions.push({
-                symbol: s.reserve.symbol,
-                amount,
-                isDebt: false,
-                implication: s.reserve.symbol.includes('USDC') 
-                  ? "Core Liquidity Shield. This stable collateral protects your health factor from BTC/ETH volatility." 
-                  : "Yield-bearing collateral asset powering your account's borrowing capacity."
-              });
+        if (userData) {
+          // 1. Process Supply Events (Collateral)
+          const seenSupplies = new Set();
+          userData.supplies?.forEach((s: any) => {
+            if (!seenSupplies.has(s.reserve.symbol)) {
+              const amount = (Number(s.amount) / Math.pow(10, s.reserve.decimals)).toFixed(4);
+              if (Number(amount) > 0) {
+                finalPositions.push({
+                  symbol: s.reserve.symbol,
+                  amount,
+                  isDebt: false,
+                  implication: s.reserve.symbol.includes('USDC') 
+                    ? "Core Liquidity Shield. This stable collateral protects your health factor from market volatility." 
+                    : "Growth-oriented collateral asset increasing your total borrowing power."
+                });
+                seenSupplies.add(s.reserve.symbol);
+              }
             }
           });
-        }
 
-        // 2. Process Debt (Borrows)
-        if (data?.borrows) {
-          data.borrows.forEach((b: any) => {
-            const amount = (Number(b.amount) / Math.pow(10, b.reserve.decimals)).toFixed(4);
-            if (Number(amount) > 0) {
-              finalPositions.push({
-                symbol: b.reserve.symbol,
-                amount,
-                isDebt: true,
-                implication: "Strategic Liability. Your position is mathematically hedged if this asset's price drops."
-              });
+          // 2. Process Borrow Events (Debt)
+          const seenBorrows = new Set();
+          userData.borrows?.forEach((b: any) => {
+            if (!seenBorrows.has(b.reserve.symbol)) {
+              const amount = (Number(b.amount) / Math.pow(10, b.reserve.decimals)).toFixed(4);
+              if (Number(amount) > 0) {
+                finalPositions.push({
+                  symbol: b.reserve.symbol,
+                  amount,
+                  isDebt: true,
+                  implication: "Strategic Debt Position. Mathematically hedged against broader market drawdowns."
+                });
+                seenBorrows.add(b.reserve.symbol);
+              }
             }
           });
         }
 
         setPositions(finalPositions);
       } catch (err) {
-        console.error("Sentinel Analysis Connection Failed:", err);
+        console.error("Sentinel Analysis Error:", err);
       } finally {
         setIsLoading(false);
       }
@@ -109,9 +112,5 @@ export function useUserPositions() {
     fetchSentinelData();
   }, [address, isConnected]);
 
-  return { 
-    positions, 
-    isLoading, 
-    hasPositions: positions.length > 0 
-  };
+  return { positions, isLoading, hasPositions: positions.length > 0 };
 }
