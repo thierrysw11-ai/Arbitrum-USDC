@@ -50,7 +50,9 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
         const requirement = offer.accepts.find((r: any) => r.network === "arbitrum-one");
 
         // Fixes the 0x000 issue using address from image_651dc0.png
-        const payToAddress = requirement?.payTo || "0xFED63F59b12f22e517b82F0d185B137aD01b3Fd4"; 
+        const payToAddress = (requirement?.payTo && requirement.payTo !== "0x0000000000000000000000000000000000000000") 
+  ? requirement.payTo 
+  : "0xFED63f59b12f22e517b82f0d185B137ad01b3Fd4";
 
         const network = getNetwork("arbitrum-one");
         const now = Math.floor(Date.now() / 1000);
