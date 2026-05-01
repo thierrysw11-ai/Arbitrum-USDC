@@ -49,7 +49,7 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
         const offer = await first.json();
         
         // 1. Force use of the verified checksummed address from image_651dc0.png
-        const payToAddress = "0xFED63f59B12F22e517B82F0D185B137Ad01b3Fd4"; 
+        const payToAddress = "0xfed63f59b12f22e517b82f0d185b137ad01b3fd4"; 
 
         const network = getNetwork("arbitrum-one");
         const now = Math.floor(Date.now() / 1000);
