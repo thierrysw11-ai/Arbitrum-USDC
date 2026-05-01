@@ -1,75 +1,69 @@
-import { useAccount, useReadContract } from 'wagmi';
-import { formatUnits } from 'viem';
+import { useAccount } from 'wagmi';
+import { useState, useEffect } from 'react';
 
-// AAVE V3 ARBITRUM ONE ADDRESSES
-const DATA_PROVIDER = '0x69FA688f1Dc474759186cFE4639561726763631C';
-const POOL_ADDRESS = '0x794a61358D6845594F94dc1DB02A252b5b4814aD';
-
-const ABI = [{
-    name: 'getUserReservesData',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'market', type: 'address' }, { name: 'user', type: 'address' }],
-    outputs: [
-        {
-            components: [
-                { name: 'underlyingAsset', type: 'address' },
-                { name: 'name', type: 'string' },
-                { name: 'symbol', type: 'string' },
-                { name: 'decimals', type: 'uint256' },
-                { name: 'currentATokenBalance', type: 'uint256' },
-                { name: 'currentVariableDebt', type: 'uint256' },
-                { name: 'usageAsCollateralEnabled', type: 'bool' },
-            ],
-            type: 'tuple[]',
-        },
-        { name: 'userEmode', type: 'uint256' }
-    ],
-}] as const;
+// Replace with your actual Subgraph Query URLs from The Graph Dashboard
+const AAVE_SUBGRAPH_URL = "https://gateway.thegraph.com/api/[YOUR_API_KEY]/subgraphs/id/[AAVE_SUBGRAPH_ID]";
 
 export function useUserPositions() {
-    const { address, isConnected } = useAccount();
+  const { address } = useAccount();
+  const [positions, setPositions] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
-    const { data, isLoading } = useReadContract({
-        address: DATA_PROVIDER,
-        abi: ABI,
-        functionName: 'getUserReservesData',
-        args: address ? [POOL_ADDRESS, address] : undefined,
-        query: { 
-            enabled: !!address && isConnected,
-            refetchInterval: 10_000 // Refresh every 10s
-        }
-    });
+  useEffect(() => {
+    if (!address) return;
 
-    const getImplication = (symbol: string, isDebt: boolean) => {
-        if (symbol.includes('USDC')) return "Your core safety net. This collateral is currently buffering your total position against liquidation.";
-        if (symbol.includes('BTC') || symbol.includes('ETH')) return isDebt ? "Strategic short exposure. You benefit if this asset's price drops relative to your collateral." : "Growth collateral. High volatility asset powering your borrow capacity.";
-        return isDebt ? "Variable interest liability." : "Yield-bearing collateral asset.";
-    };
+    const fetchSubgraphData = async () => {
+      setIsLoading(true);
+      try {
+        // GraphQL query tailored to your AAVE-Subgraph schema
+        const query = `
+          {
+            userReserves(where: { user: "${address.toLowerCase()}" }) {
+              reserve {
+                symbol
+                decimals
+              }
+              currentATokenBalance
+              currentVariableDebt
+            }
+          }
+        `;
 
-    // IMPROVED FILTER: Captures scaled balances and ignores dust
-    const positions = (data?.[0] || [])
-        .filter(res => {
-            // Check for balance > 0.01 to ignore dust/scam tokens
-            const hasSupply = res.currentATokenBalance > 1000n; 
-            const hasDebt = res.currentVariableDebt > 1000n;
-            return hasSupply || hasDebt;
-        })
-        .map(res => {
-            const isDebt = res.currentVariableDebt > res.currentATokenBalance;
-            const balance = isDebt ? res.currentVariableDebt : res.currentATokenBalance;
-            
-            return {
-                symbol: res.symbol,
-                amount: formatUnits(balance, Number(res.decimals)),
-                isDebt,
-                implication: getImplication(res.symbol, isDebt)
-            };
+        const response = await fetch(AAVE_SUBGRAPH_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query }),
         });
 
-    return { 
-        positions, 
-        isLoading: isLoading && isConnected,
-        hasPositions: positions.length > 0
+        const { data } = await response.json();
+        
+        if (data && data.userReserves) {
+          const formatted = data.userReserves
+            .filter((res: any) => res.currentATokenBalance > 0 || res.currentVariableDebt > 0)
+            .map((res: any) => {
+              const isDebt = Number(res.currentVariableDebt) > 0;
+              const symbol = res.reserve.symbol;
+              
+              return {
+                symbol: symbol,
+                amount: isDebt ? res.currentVariableDebt : res.currentATokenBalance,
+                isDebt,
+                implication: symbol.includes('USDC') 
+                  ? "Collateralized stability. Your USDC prevents liquidation during BTC volatility."
+                  : "Active borrowing strategy. High-performance debt management detected."
+              };
+            });
+          setPositions(formatted);
+        }
+      } catch (error) {
+        console.error("Subgraph fetch failed:", error);
+      } finally {
+        setIsLoading(false);
+      }
     };
+
+    fetchSubgraphData();
+  }, [address]);
+
+  return { positions, isLoading, hasPositions: positions.length > 0 };
 }
