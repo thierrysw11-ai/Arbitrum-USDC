@@ -11,6 +11,20 @@ import {
 } from "@/lib/x402/scheme";
 import type { PaymentPayload } from "@/lib/x402/types";
 
+// We use your existing logic for health factor bucket colors
+const getHealthColor = (hf: number) => {
+  if (hf > 2.0) return "text-emerald-400";
+  if (hf > 1.5) return "text-amber-400";
+  if (hf > 1.1) return "text-orange-400";
+  return "text-red-500";
+};
+
+const getBarColor = (hf: number) => {
+  if (hf > 2.0) return "bg-emerald-500";
+  if (hf > 1.5) return "bg-amber-500";
+  return "bg-red-500";
+};
+
 export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) {
   const { address: connected } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
@@ -20,12 +34,6 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
   const [data, setData] = useState<any>(null);
 
   const target = address || connected;
-
-  const getRiskColor = (hf: number) => {
-    if (hf > 2.0) return "bg-emerald-500";
-    if (hf > 1.5) return "bg-yellow-500";
-    return "bg-red-500";
-  };
 
   async function runAnalysis() {
     if (!target || !connected) return;
@@ -94,7 +102,7 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
           <button
             onClick={runAnalysis}
             disabled={loading}
-            className="w-full md:w-auto bg-white text-black px-10 py-4 rounded-full font-bold text-xs uppercase tracking-widest hover:bg-purple-500 hover:text-white transition-all active:scale-95 disabled:opacity-50"
+            className="w-full md:w-auto bg-white text-black px-10 py-4 rounded-full font-bold text-xs uppercase tracking-widest hover:bg-purple-600 hover:text-white transition-all active:scale-95 disabled:opacity-50"
           >
             {loading ? "Authorizing..." : "Execute Deep-Dive (0.01 USDC)"}
           </button>
@@ -108,39 +116,38 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
 
         {data && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
-            {/* Main Score Card */}
+            {/* Main Score Card mapped to Health Factor */}
             <div className="bg-white/5 p-8 rounded-3xl border border-white/5">
                <div className="flex justify-between items-center mb-6">
                   <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Live Health Factor</span>
-                  <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Risk Tolerance: High</span>
+                  <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Premium Verification Active</span>
                </div>
-               <div className="flex items-baseline gap-2 mb-6">
-                  <span className="text-6xl font-mono font-black text-white">
+               <div className="flex items-baseline gap-3 mb-6">
+                  <span className={`text-6xl font-mono font-black ${getHealthColor(data.currentHealthFactor)}`}>
                     {data.currentHealthFactor?.toFixed(2)}
                   </span>
                </div>
                <div className="h-3 w-full bg-zinc-800 rounded-full">
                   <div 
-                    className={`h-full rounded-full transition-all duration-1000 ${getRiskColor(data.currentHealthFactor)}`}
+                    className={`h-full rounded-full transition-all duration-1000 ${getBarColor(data.currentHealthFactor)}`}
                     style={{ width: `${Math.min((data.currentHealthFactor / 4) * 100, 100)}%` }}
                   />
                </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Guardian Insights */}
-              <div className="bg-purple-500/5 p-6 rounded-3xl border border-purple-500/10">
-                <h3 className="text-[10px] text-purple-400 font-bold uppercase tracking-widest mb-4">Guardian Recommendation</h3>
-                <p className="text-lg text-white font-medium italic leading-relaxed">
-                  {data.currentHealthFactor > 2.0 
-                    ? "Position is highly stable. Minimal risk of liquidation within current volatility bounds."
-                    : "Caution: Monitoring required. Volatility may impact liquidation thresholds soon."}
+              {/* Utilization Placeholder replaced with Max Shock */}
+              <div className="bg-white/5 p-6 rounded-3xl border border-white/5">
+                <h3 className="text-[10px] text-purple-400 font-bold uppercase tracking-widest mb-4">Max Risk Drawdown</h3>
+                <p className="text-3xl font-mono font-bold text-white leading-relaxed">
+                  {data.shockMatrix?.[0]?.shockPct || "0"}%
                 </p>
+                <p className="text-[11px] text-zinc-500 mt-2">Maximum simulated price drop before safety thresholds are breached.</p>
               </div>
 
-              {/* Stress Test */}
+              {/* Shock Matrix Table */}
               <div className="bg-white/5 p-6 rounded-3xl border border-white/5">
-                <h3 className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-4">Shock Matrix</h3>
+                <h3 className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-4">Shock Matrix Projection</h3>
                 <div className="space-y-3">
                   {data.shockMatrix?.slice(0, 3).map((m: any, i: number) => (
                     <div key={i} className="flex justify-between items-center py-2 border-b border-white/5 last:border-0">
