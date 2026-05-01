@@ -1,7 +1,7 @@
 import { useAccount, useReadContract } from 'wagmi';
 import { formatUnits } from 'viem';
 
-// AAVE V3 Arbitrum Core Addresses
+// AAVE V3 ARBITRUM ONE ADDRESSES
 const DATA_PROVIDER = '0x69FA688f1Dc474759186cFE4639561726763631C';
 const POOL_ADDRESS = '0x794a61358D6845594F94dc1DB02A252b5b4814aD';
 
@@ -30,28 +30,33 @@ const ABI = [{
 export function useUserPositions() {
     const { address, isConnected } = useAccount();
 
-    const { data, isLoading, isError } = useReadContract({
+    const { data, isLoading } = useReadContract({
         address: DATA_PROVIDER,
         abi: ABI,
         functionName: 'getUserReservesData',
         args: address ? [POOL_ADDRESS, address] : undefined,
         query: { 
             enabled: !!address && isConnected,
-            staleTime: 5000 
+            refetchInterval: 10_000 // Refresh every 10s
         }
     });
 
     const getImplication = (symbol: string, isDebt: boolean) => {
-        if (symbol.includes('USDC')) return "Stability anchor. Protects your Health Factor from market volatility.";
-        if (symbol.includes('BTC')) return "Strategic short. Your debt actually shrinks if Bitcoin's price drops.";
-        return isDebt ? "Variable rate loan." : "Collateral asset.";
+        if (symbol.includes('USDC')) return "Your core safety net. This collateral is currently buffering your total position against liquidation.";
+        if (symbol.includes('BTC') || symbol.includes('ETH')) return isDebt ? "Strategic short exposure. You benefit if this asset's price drops relative to your collateral." : "Growth collateral. High volatility asset powering your borrow capacity.";
+        return isDebt ? "Variable interest liability." : "Yield-bearing collateral asset.";
     };
 
-    // Filter logic specifically targeting non-zero BigInts
+    // IMPROVED FILTER: Captures scaled balances and ignores dust
     const positions = (data?.[0] || [])
-        .filter(res => res.currentATokenBalance > 0n || res.currentVariableDebt > 0n)
+        .filter(res => {
+            // Check for balance > 0.01 to ignore dust/scam tokens
+            const hasSupply = res.currentATokenBalance > 1000n; 
+            const hasDebt = res.currentVariableDebt > 1000n;
+            return hasSupply || hasDebt;
+        })
         .map(res => {
-            const isDebt = res.currentVariableDebt > 0n;
+            const isDebt = res.currentVariableDebt > res.currentATokenBalance;
             const balance = isDebt ? res.currentVariableDebt : res.currentATokenBalance;
             
             return {
@@ -65,6 +70,6 @@ export function useUserPositions() {
     return { 
         positions, 
         isLoading: isLoading && isConnected,
-        isError 
+        hasPositions: positions.length > 0
     };
 }
