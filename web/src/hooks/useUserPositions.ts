@@ -1,15 +1,15 @@
 import { useAccount } from 'wagmi';
 import { useState, useEffect } from 'react';
 
-const USDC_SUBGRAPH_URL = process.env.NEXT_PUBLIC_USDC_SUBGRAPH_URL!;
+const SUBGRAPH_URL = process.env.NEXT_PUBLIC_USDC_SUBGRAPH_URL!;
 
 export interface UserPosition {
   symbol: string;
   amount: string;
   isDebt: boolean;
-  type: string;
-  implication: string;      // Fills the card description
-  agentAnalysis: string;    // Fills the bottom purple assessment box
+  type: "MARKET EXPOSURE" | "MARKET LIABILITY";
+  marketContext: string;     // Your holding vs the protocol volume
+  agentAssessment: string;   // The "Why" behind the holding
 }
 
 export function useUserPositions() {
@@ -18,21 +18,22 @@ export function useUserPositions() {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (!address || !isConnected) {
-      setPositions([]);
-      return;
-    }
+    if (!address || !isConnected) return;
 
-    const fetchSentinelForensics = async () => {
+    const fetchFullSentinelIntel = async () => {
       setIsLoading(true);
       try {
         const query = `
-          query GetSentinelForensics($user: Bytes!) {
-            # Forensic ledger lookup
-            incoming: transfers(where: { to: $user }) { value }
-            outgoing: transfers(where: { from: $user }) { value }
+          query GetSentinelComparative($user: Bytes!) {
+            # 1. Fetching all transfer activity to reconstruct the 'Full List'
+            incoming: transfers(where: { to: $user }, first: 1000) { 
+              value 
+            }
+            outgoing: transfers(where: { from: $user }, first: 1000) { 
+              value 
+            }
             
-            # Global intelligence fields from image_3b61ac.png
+            # 2. Fetching Global Market Data for comparison (from image_3b61ac.png)
             hourlyVolumes(first: 1, orderBy: hourStartTimestamp, orderDirection: desc) {
               totalVolume
               whaleVolume
@@ -41,55 +42,52 @@ export function useUserPositions() {
           }
         `;
 
-        const response = await fetch(USDC_SUBGRAPH_URL, {
+        const response = await fetch(SUBGRAPH_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            query, 
-            variables: { user: address } 
-          }),
+          body: JSON.stringify({ query, variables: { user: address } }),
         });
 
         const { data } = await response.json();
+        if (!data) return;
 
-        if (data) {
-          // 1. Calculate Net Balance for the 'Current Volume' display
-          const incoming = data.incoming?.reduce((sum: any, t: any) => sum + BigInt(t.value), 0n) || 0n;
-          const outgoing = data.outgoing?.reduce((sum: any, t: any) => sum + BigInt(t.value), 0n) || 0n;
-          const netBalance = Number(incoming - outgoing) / 1_000_000;
+        const market = data.hourlyVolumes?.[0];
+        const allPositions: UserPosition[] = [];
 
-          if (netBalance > 0) {
-            const market = data.hourlyVolumes?.[0];
-            
-            // 2. Map data to the Elite UI schema
-            setPositions([{
-              symbol: "USDC",
-              amount: netBalance.toFixed(4),
-              isDebt: false,
-              type: "MARKET EXPOSURE",
-              // Fills the empty quotes in image_306274.png
-              implication: `Core Liquidity Shield. Market status: ${market?.transferCount || 0} active transfers with ${market?.whaleVolume || 0} institutional whale volume detected.`,
-              // Matches the specific copy from image_3bbbe3.png
-              agentAnalysis: `Your USDC collateral is providing a stable floor for your WBTC debt. In a market downturn, your health factor will improve as the value of your debt decreases—this is an Elite Hedge configuration.`
-            }]);
-          } else {
-            setPositions([]);
-          }
+        // --- CALCULATION LOGIC ---
+        const inVal = data.incoming.reduce((s: any, t: any) => s + BigInt(t.value), 0n);
+        const outVal = data.outgoing.reduce((s: any, t: any) => s + BigInt(t.value), 0n);
+        const netUSDC = Number(inVal - outVal) / 1_000_000;
+
+        if (netUSDC > 0) {
+          // Compare holding against Market Total (Total Volume)
+          const marketShare = (netUSDC / (Number(market?.totalVolume || 1) / 1_000_000)) * 100;
+
+          allPositions.push({
+            symbol: "USDC",
+            amount: netUSDC.toFixed(4),
+            isDebt: false,
+            type: "MARKET EXPOSURE",
+            // The "Clear Understanding" component
+            marketContext: `You command ${marketShare.toFixed(4)}% of the current hourly protocol volume.`,
+            // The "Comparative Assessment" component
+            agentAssessment: `Your USDC collateral is providing a stable floor for your high-volatility debt. While whale volume is ${market?.whaleVolume || 0}, your position remains mathematically shielded.`
+          });
         }
+
+        // Note: To add more assets (WBTC, DAI), you would add 
+        // similar calculation blocks here based on the subgraph's asset IDs.
+
+        setPositions(allPositions);
       } catch (err) {
-        console.error("Sentinel Intelligence Critical Failure:", err);
-        setPositions([]);
+        console.error("Sentinel Risk Engine Error:", err);
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchSentinelForensics();
+    fetchFullSentinelIntel();
   }, [address, isConnected]);
 
-  return { 
-    positions, 
-    isLoading, 
-    hasPositions: positions.length > 0 
-  };
+  return { positions, isLoading };
 }
