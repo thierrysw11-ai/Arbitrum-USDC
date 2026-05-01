@@ -135,25 +135,31 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
 
         {trace && <ToolTrace name={trace.name} args={trace.args} result={trace.result} />}
 
-        {data && (
-          <div className="mt-8 space-y-6">
-             <div className="grid grid-cols-2 gap-4">
-                <div className="bg-zinc-950 p-4 rounded-xl border border-white/5">
-                   <div className="text-[10px] text-purple-400 font-bold uppercase mb-1">Utilization</div>
-                   <div className="text-2xl font-mono font-bold text-white">{data.utilization}%</div>
-                </div>
-                <div className="bg-zinc-950 p-4 rounded-xl border border-white/5">
-                   <div className="text-[10px] text-emerald-400 font-bold uppercase mb-1">Efficiency Spread</div>
-                   <div className="text-2xl font-mono font-bold text-white">+{data.apySpread}%</div>
-                </div>
-             </div>
-             <div className="bg-white/5 p-4 rounded-xl border border-purple-500/20">
-                <p className="text-xs text-zinc-300 leading-relaxed italic">
-                  <strong className="text-purple-400 not-italic">GUARDIAN_NOTE:</strong> {data.note}
-                </p>
-             </div>
-          </div>
-        )}
+	{data && (
+  	<div className="mt-8 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+     	<div className="grid grid-cols-2 gap-4">
+        	<div className="bg-zinc-950 p-4 rounded-xl border border-white/5 shadow-inner">
+           	<div className="text-[10px] text-purple-400 font-bold uppercase mb-1">Utilization</div>
+           	{/* Fallback to 0 if data is missing */}
+           	<div className="text-2xl font-mono font-bold text-white">
+             	{data.utilization ?? '0'}%
+           	</div>
+        	</div>
+        	<div className="bg-zinc-950 p-4 rounded-xl border border-white/5 shadow-inner">
+           	<div className="text-[10px] text-emerald-400 font-bold uppercase mb-1">Efficiency Spread</div>
+           	<div className="text-2xl font-mono font-bold text-white">
+             	+{data.apySpread ?? '0'}%
+           	</div>
+        	</div>
+     	</div>
+     	<div className="bg-white/5 p-5 rounded-xl border border-purple-500/20">
+        	<p className="text-sm text-zinc-300 leading-relaxed italic">
+          	<strong className="text-purple-400 not-italic font-bold mr-2">GUARDIAN_NOTE:</strong> 
+          	{data.note || "Analysis complete. Risk levels nominal."}
+        	</p>
+     	</div>
+  	</div>
+	)}
       </div>
     </div>
   );
