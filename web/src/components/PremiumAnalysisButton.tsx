@@ -135,32 +135,37 @@ export function PremiumAnalysisButton({ address }: { address?: `0x${string}` }) 
 
         {trace && <ToolTrace name={trace.name} args={trace.args} result={trace.result} />}
 
-	{data && (
-  	<div className="mt-8 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
-     	<div className="grid grid-cols-2 gap-4">
-        	<div className="bg-zinc-950 p-4 rounded-xl border border-white/5 shadow-inner">
-           	<div className="text-[10px] text-purple-400 font-bold uppercase mb-1">Utilization</div>
-           	{/* Fallback to 0 if data is missing */}
-           	<div className="text-2xl font-mono font-bold text-white">
-             	{data.utilization ?? '0'}%
-           	</div>
-        	</div>
-        	<div className="bg-zinc-950 p-4 rounded-xl border border-white/5 shadow-inner">
-           	<div className="text-[10px] text-emerald-400 font-bold uppercase mb-1">Efficiency Spread</div>
-           	<div className="text-2xl font-mono font-bold text-white">
-             	+{data.apySpread ?? '0'}%
-           	</div>
-        	</div>
-     	</div>
-     	<div className="bg-white/5 p-5 rounded-xl border border-purple-500/20">
-        	<p className="text-sm text-zinc-300 leading-relaxed italic">
-          	<strong className="text-purple-400 not-italic font-bold mr-2">GUARDIAN_NOTE:</strong> 
-          	{data.note || "Analysis complete. Risk levels nominal."}
-        	</p>
-     	</div>
-  	</div>
-	)}
-      </div>
-    </div>
-  );
-}
+{data && (
+  <div className="mt-8 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+     <div className="grid grid-cols-2 gap-4">
+        <div className="bg-zinc-950 p-4 rounded-xl border border-white/5 shadow-inner">
+           <div className="text-[10px] text-purple-400 font-bold uppercase mb-1">Health Factor</div>
+           <div className="text-2xl font-mono font-bold text-white">
+             {/* Mapping currentHealthFactor from image_2b311b.png */}
+             {(data as any).currentHealthFactor?.toFixed(3) || '0.000'}
+           </div>
+        </div>
+        <div className="bg-zinc-950 p-4 rounded-xl border border-white/5 shadow-inner">
+           <div className="text-[10px] text-emerald-400 font-bold uppercase mb-1">Max Risk Shock</div>
+           <div className="text-2xl font-mono font-bold text-white">
+             {/* Pulling the first shock percentage from the matrix */}
+             {(data as any).shockMatrix?.[0]?.shockPct || '0'}%
+           </div>
+        </div>
+     </div>
+     
+     <div className="bg-white/5 p-5 rounded-xl border border-purple-500/20">
+        <div className="text-[10px] text-zinc-500 font-bold uppercase mb-2">Shock Analysis Matrix</div>
+        <div className="space-y-2">
+          {(data as any).shockMatrix?.map((m: any, i: number) => (
+            <div key={i} className="flex justify-between text-xs font-mono">
+              <span className="text-zinc-400">Price {m.shockPct}%:</span>
+              <span className={m.liquidatable ? "text-red-500" : "text-emerald-500"}>
+                HF {m.projectedHealthFactor?.toFixed(3)} {m.liquidatable ? "[LIQUIDATABLE]" : "[SAFE]"}
+              </span>
+            </div>
+          ))}
+        </div>
+     </div>
+  </div>
+)}
