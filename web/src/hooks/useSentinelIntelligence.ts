@@ -1,17 +1,17 @@
 import { useAccount } from 'wagmi';
 import { useState, useEffect } from 'react';
 
-/**
- * ENTITY DEFINITION:
- * This represents the "Elite" view: Personal position vs. Global Market Context.
- */
+// This URL should point to your USDC-specific subgraph from image_3b4494.png
+const SUBGRAPH_URL = process.env.NEXT_PUBLIC_USDC_SUBGRAPH_URL!;
+
 export interface MarketIntelligence {
-  asset: string;
-  holdings: number;
+  symbol: string;
+  amount: string;
+  type: "MARKET EXPOSURE" | "MARKET LIABILITY";
   marketShare: string;      // User Volume / Total Global Volume
-  volatilityIndex: string;  // Based on transferCount
-  riskCategory: 'SHIELD' | 'LIABILITY' | 'HEDGE';
-  assessment: string;
+  volatilityIndex: string;  // Assessment of transfer frequency
+  implication: string;      // The status text inside the card
+  agentAnalysis: string;    // The full narrative for the bottom box
 }
 
 export function useSentinelIntelligence() {
@@ -20,16 +20,19 @@ export function useSentinelIntelligence() {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (!address || !isConnected) return;
+    if (!address || !isConnected) {
+      setIntelligence([]);
+      return;
+    }
 
     const fetchEliteMetrics = async () => {
       setIsLoading(true);
       try {
-        // We query the USDC ledger and the Global Hourly Stats simultaneously
+        // Querying both personal ledger and global market stats from image_3b61ac.png
         const query = `
           query GetSentinelElite($user: Bytes!) {
-            incoming: transfers(where: { to: $user }) { value }
-            outgoing: transfers(where: { from: $user }) { value }
+            incoming: transfers(where: { to: $user }, first: 1000) { value }
+            outgoing: transfers(where: { from: $user }, first: 1000) { value }
             marketStats: hourlyVolumes(first: 1, orderBy: hourStartTimestamp, orderDirection: desc) {
               totalVolume
               whaleVolume
@@ -38,41 +41,55 @@ export function useSentinelIntelligence() {
           }
         `;
 
-        const response = await fetch(process.env.NEXT_PUBLIC_USDC_SUBGRAPH_URL!, {
+        const response = await fetch(SUBGRAPH_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query, variables: { user: address } }),
+          body: JSON.stringify({ 
+            query, 
+            variables: { user: address } 
+          }),
         });
 
-        const { data } = await response.json();
-        if (!data) return;
-
-        const stats = data.marketStats[0];
+        const { data, errors } = await response.json();
         
-        // 1. RECONSTRUCT POSITION
-        const net = (data.incoming.reduce((s:any, t:any) => s + BigInt(t.value), 0n) - 
-                     data.outgoing.reduce((s:any, t:any) => s + BigInt(t.value), 0n));
-        const balance = Number(net) / 1_000_000;
+        if (errors) {
+          console.error("GraphQL Validation Error:", errors);
+          return;
+        }
 
-        // 2. CALCULATE MARKET RELATIVITY
-        // Comparing user balance against hourly total volume gives the "Efficiency" metric
-        const share = (balance / (Number(stats.totalVolume) / 1_000_000)) * 100;
+        if (data) {
+          const stats = data.marketStats[0];
+          
+          // 1. RECONSTRUCT POSITION (Forensic Ledger Method)
+          const inVal = data.incoming.reduce((acc: any, t: any) => acc + BigInt(t.value), 0n);
+          const outVal = data.outgoing.reduce((acc: any, t: any) => acc + BigInt(t.value), 0n);
+          const netBalance = Number(inVal - outVal) / 1_000_000;
 
-        // 3. GENERATE COMPARATIVE DATA
-        const usdcIntelligence: MarketIntelligence = {
-          asset: "USDC",
-          holdings: balance,
-          marketShare: `${share.toFixed(4)}%`,
-          volatilityIndex: stats.transferCount > 1000 ? "HIGH" : "STABLE",
-          riskCategory: 'SHIELD',
-          assessment: `Your ${balance.toFixed(2)} USDC represents ${share.toFixed(4)}% of current hourly market flow. This liquidity acts as a Shield against broader volatility.`
-        };
+          const allPositions: MarketIntelligence[] = [];
 
-        // If you had a WBTC subgraph, you would fetch and add it to this array here
-        setIntelligence([usdcIntelligence]);
+          if (netBalance > 0) {
+            // 2. CALCULATE MARKET RELATIVITY (Clear Understanding of Market Share)
+            const globalVolume = Number(stats?.totalVolume || 1) / 1_000_000;
+            const share = (netBalance / globalVolume) * 100;
+            
+            // 3. GENERATE COMPARATIVE INTELLIGENCE
+            allPositions.push({
+              symbol: "USDC",
+              amount: netBalance.toFixed(4),
+              type: "MARKET EXPOSURE",
+              marketShare: `${share.toFixed(4)}%`,
+              volatilityIndex: Number(stats?.transferCount) > 1000 ? "HIGH" : "STABLE",
+              implication: `Core Liquidity Shield. Market status: ${stats?.transferCount || 0} active transfers with ${stats?.whaleVolume || 0} whale volume.`,
+              agentAnalysis: `Your USDC collateral is providing a stable floor for your WBTC debt. Your holding commands ${share.toFixed(4)}% of current hourly market flow—this is an Elite Hedge configuration.`
+            });
+          }
 
+          // Note: To add WBTC or DAI, you would replicate the logic above 
+          // or point to additional subgraphs.
+          setIntelligence(allPositions);
+        }
       } catch (err) {
-        console.error("Intelligence Engine Offline:", err);
+        console.error("Sentinel Intelligence Engine Offline:", err);
       } finally {
         setIsLoading(false);
       }
@@ -81,5 +98,9 @@ export function useSentinelIntelligence() {
     fetchEliteMetrics();
   }, [address, isConnected]);
 
-  return { intelligence, isLoading };
+  return { 
+    intelligence, 
+    isLoading, 
+    hasPositions: intelligence.length > 0 
+  };
 }
