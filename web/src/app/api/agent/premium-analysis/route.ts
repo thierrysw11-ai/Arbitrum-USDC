@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateEliteReport } from '@/lib/sentinel/generateEliteReport';
+import { generateEliteReport } from '@/lib/agent/generateEliteReport';
+import { getServerPortfolio } from '@/lib/aave/server';   // ← Your real server function
 
-// Production x402 settlement
 export async function POST(request: NextRequest) {
   try {
     const { address } = await request.json();
@@ -10,50 +10,44 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Wallet address is required" }, { status: 400 });
     }
 
-    // 1. Get portfolio data
-    const portfolio = await getPortfolioData(address);
+    // Fetch REAL Aave V3 position
+    const portfolio = await getServerPortfolio(address as `0x${string}`);
 
     if (!portfolio || portfolio.positions.length === 0) {
-      return NextResponse.json({ error: "No Aave V3 positions found" }, { status: 400 });
+      return NextResponse.json({ 
+        error: "No Aave V3 positions found for this address." 
+      }, { status: 400 });
     }
 
-    // 2. Generate report
-    const report = generateEliteReport({
-      healthFactor: portfolio.healthFactor,
-      totalCollateralUSD: portfolio.totalCollateralUSD,
-      totalDebtUSD: portfolio.totalDebtUSD,
-      availableBorrowsUSD: portfolio.availableBorrowsUSD,
-      ltv: portfolio.ltv,
-      liquidationThreshold: portfolio.liquidationThreshold,
-      assetBreakdown: portfolio.assetBreakdown,
-      aaveUsdcApy: "4.46",
+    // Convert to report format
+    const totalCollateral = Number(portfolio.account.totalCollateralBase) / 1e8;
+    const totalDebt = Number(portfolio.account.totalDebtBase) / 1e8;
+
+    const reportData = {
+      healthFactor: (Number(portfolio.account.healthFactor) / 1e18).toFixed(2),
+      totalCollateralUSD: totalCollateral.toFixed(0),
+      totalDebtUSD: totalDebt.toFixed(0),
+      availableBorrowsUSD: (Number(portfolio.account.availableBorrowsBase) / 1e8).toFixed(0),
+      ltv: (Number(portfolio.account.ltv) / 100).toFixed(1),
+      liquidationThreshold: (Number(portfolio.account.currentLiquidationThreshold) / 100).toFixed(1),
+      assetBreakdown: portfolio.positions
+        .map(p => `${p.symbol}: $${((Number(p.aTokenBalance) * Number(p.priceBase)) / (10 ** p.decimals * 1e8)).toFixed(0)}`)
+        .join(", "),
+      aaveUsdcApy: "4.66",
       morphoYields: "Gauntlet: 7.2%, Steakhouse: 6.8%",
-    });
+    };
+
+    const report = generateEliteReport(reportData);
 
     return NextResponse.json({
       success: true,
-      report,
+      report: report,
     });
 
   } catch (error: any) {
-    console.error(error);
+    console.error("Premium Analysis Error:", error);
     return NextResponse.json({ 
-      error: error.message || "Analysis failed" 
+      error: error.message || "Failed to generate analysis" 
     }, { status: 500 });
   }
-}
-
-// Helper (expand with your real data)
-async function getPortfolioData(address: string) {
-  // Call your subgraph or usePortfolio logic here
-  return {
-    healthFactor: "2.60",
-    totalCollateralUSD: "6500",
-    totalDebtUSD: "2500",
-    availableBorrowsUSD: "1800",
-    ltv: "38",
-    liquidationThreshold: "82.5",
-    assetBreakdown: "USDC: $5,000, DAI: $1,500",
-    positions: [{ symbol: "USDC", amount: "5000" }]
-  };
 }

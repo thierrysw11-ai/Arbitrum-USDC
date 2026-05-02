@@ -5,14 +5,14 @@ import { X, Zap, Shield } from 'lucide-react';
 import { useAccount } from 'wagmi';
 
 export function PremiumAnalysisButton() {
-  const { address } = useAccount();
+  const { address, isConnected } = useAccount();
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const runAnalysis = async () => {
-    if (!address) {
+    if (!address || !isConnected) {
       setError("Please connect your wallet first");
       return;
     }
@@ -30,12 +30,12 @@ export function PremiumAnalysisButton() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Analysis failed. Please try again.');
+        throw new Error(data.error || 'Analysis failed');
       }
 
       setAnalysis(data.report || data.analysis);
     } catch (err: any) {
-      setError(err.message || 'Something went wrong. Please try again.');
+      setError(err.message || 'Something went wrong');
     } finally {
       setIsLoading(false);
     }
@@ -54,8 +54,6 @@ export function PremiumAnalysisButton() {
       {isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-xl">
           <div className="relative w-full max-w-3xl bg-zinc-950 border border-zinc-700 rounded-3xl overflow-hidden">
-            
-            {/* Header */}
             <div className="p-8 border-b border-zinc-800 flex justify-between items-start">
               <div>
                 <div className="uppercase tracking-widest text-xs text-purple-400 font-bold mb-1">SYSTEM INTELLIGENCE ACTIVE</div>
@@ -67,7 +65,6 @@ export function PremiumAnalysisButton() {
               </button>
             </div>
 
-            {/* Content Area */}
             <div className="p-8 min-h-[420px]">
               {!analysis && !error ? (
                 <div className="flex flex-col items-center justify-center h-[380px] text-center">
@@ -81,7 +78,7 @@ export function PremiumAnalysisButton() {
                     disabled={isLoading}
                     className="px-14 py-4 bg-gradient-to-r from-purple-600 to-violet-600 rounded-2xl font-semibold text-lg disabled:opacity-50 flex items-center gap-3"
                   >
-                    {isLoading ? "Processing Settlement..." : "EXECUTE DEEP-DIVE (0.01 USDC)"}
+                    {isLoading ? "Processing..." : "EXECUTE DEEP-DIVE (0.01 USDC)"}
                     <Zap className="w-5 h-5" />
                   </button>
                 </div>
