@@ -2,47 +2,44 @@
 
 import React, { useState } from 'react';
 import { X, Zap, Shield } from 'lucide-react';
+import { useAccount } from 'wagmi';
 
-interface PremiumAnalysisButtonProps {
-  address?: `0x${string}`;
-}
-
-export function PremiumAnalysisButton({ address }: PremiumAnalysisButtonProps) {
+export function PremiumAnalysisButton() {
+  const { address } = useAccount(); // Get address directly from wagmi
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-// In PremiumAnalysisButton.tsx
-const runAnalysis = async () => {
-  if (!address) {
-    setError("Wallet address is required");
-    return;
-  }
-
-  setIsLoading(true);
-  setError(null);
-
-  try {
-    const response = await fetch('/api/agent/premium-analysis', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address }),
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error || 'Analysis failed. Please try again later.');
+  const runAnalysis = async () => {
+    if (!address) {
+      setError("Please connect your wallet first");
+      return;
     }
 
-    setAnalysis(data.report || data.analysis);
-  } catch (err: any) {
-    setError(err.message || 'Something went wrong. Please try again.');
-  } finally {
-    setIsLoading(false);
-  }
-};
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/agent/premium-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address: address.toLowerCase() }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Analysis failed. Please try again.');
+      }
+
+      setAnalysis(data.report || data.analysis);
+    } catch (err: any) {
+      setError(err.message || 'Something went wrong. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <>
@@ -84,7 +81,7 @@ const runAnalysis = async () => {
                     disabled={isLoading}
                     className="px-14 py-4 bg-gradient-to-r from-purple-600 to-violet-600 rounded-2xl font-semibold text-lg disabled:opacity-50 flex items-center gap-3"
                   >
-                    {isLoading ? "Processing Settlement..." : "EXECUTE DEEP-DIVE (0.01 USDC)"}
+                    {isLoading ? "Processing..." : "EXECUTE DEEP-DIVE (0.01 USDC)"}
                     <Zap className="w-5 h-5" />
                   </button>
                 </div>
@@ -92,35 +89,4 @@ const runAnalysis = async () => {
                 <div className="bg-red-950 border border-red-800 rounded-2xl p-8 text-red-400 text-center">
                   {error}
                 </div>
-              ) : (
-                <div className="prose prose-invert max-w-none text-zinc-200 leading-relaxed whitespace-pre-wrap">
-                  {analysis}
-                </div>
-              )}
-            </div>
-
-            {analysis && (
-              <div className="p-8 border-t border-zinc-800 flex gap-4">
-                <button 
-                  onClick={() => setIsOpen(false)}
-                  className="flex-1 py-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl font-medium"
-                >
-                  Close
-                </button>
-                <button 
-                  onClick={() => {
-                    setAnalysis(null);
-                    setError(null);
-                  }}
-                  className="flex-1 py-4 bg-purple-600 hover:bg-purple-500 rounded-2xl font-medium"
-                >
-                  Run New Analysis
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
+              ) :
