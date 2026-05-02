@@ -13,36 +13,35 @@ export function PremiumAnalysisButton({ address }: PremiumAnalysisButtonProps) {
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-// In PremiumAnalysisButton.tsx
-const runAnalysis = async () => {
-  if (!address) {
-    setError("Wallet address is required");
-    return;
-  }
-
-  setIsLoading(true);
-  setError(null);
-
-  try {
-    const response = await fetch('/api/agent/premium-analysis', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address }),
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error || 'Analysis failed. Please try again later.');
+  const runAnalysis = async () => {
+    if (!address) {
+      setError("Wallet address required");
+      return;
     }
 
-    setAnalysis(data.report || data.analysis);
-  } catch (err: any) {
-    setError(err.message || 'Something went wrong. Please try again.');
-  } finally {
-    setIsLoading(false);
-  }
-};
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/agent/premium-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Settlement failed. Please try again.');
+      }
+
+      setAnalysis(data.report || data.analysis);
+    } catch (err: any) {
+      setError(err.message || 'Failed to complete analysis');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <>
