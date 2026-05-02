@@ -5,7 +5,7 @@ import { X, Zap, Shield } from 'lucide-react';
 import { useAccount } from 'wagmi';
 
 export function PremiumAnalysisButton() {
-  const { address } = useAccount(); // Get address directly from wagmi
+  const { address } = useAccount();
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [analysis, setAnalysis] = useState<string | null>(null);
@@ -67,7 +67,7 @@ export function PremiumAnalysisButton() {
               </button>
             </div>
 
-            {/* Content */}
+            {/* Content Area */}
             <div className="p-8 min-h-[420px]">
               {!analysis && !error ? (
                 <div className="flex flex-col items-center justify-center h-[380px] text-center">
@@ -81,7 +81,7 @@ export function PremiumAnalysisButton() {
                     disabled={isLoading}
                     className="px-14 py-4 bg-gradient-to-r from-purple-600 to-violet-600 rounded-2xl font-semibold text-lg disabled:opacity-50 flex items-center gap-3"
                   >
-                    {isLoading ? "Processing..." : "EXECUTE DEEP-DIVE (0.01 USDC)"}
+                    {isLoading ? "Processing Settlement..." : "EXECUTE DEEP-DIVE (0.01 USDC)"}
                     <Zap className="w-5 h-5" />
                   </button>
                 </div>
@@ -89,4 +89,15 @@ export function PremiumAnalysisButton() {
                 <div className="bg-red-950 border border-red-800 rounded-2xl p-8 text-red-400 text-center">
                   {error}
                 </div>
-              ) :
+              ) : (
+                <div className="prose prose-invert max-w-none text-zinc-200 leading-relaxed whitespace-pre-wrap">
+                  {analysis}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
