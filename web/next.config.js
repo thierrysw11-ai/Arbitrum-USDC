@@ -8,6 +8,20 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+
+async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          {
+            key: 'Content-Security-Policy',
+            value: "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.walletconnect.com https://*.walletconnect.org;",
+          },
+        ],
+      },
+    ];
+  },
   
   // 2. Bypass ESLint errors during build
   eslint: {
