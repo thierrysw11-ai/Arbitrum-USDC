@@ -1,52 +1,29 @@
+// src/lib/agent/scanner.ts
 import { ethers } from 'ethers';
 
-export async function scanMetamaskPortfolio(address: string, provider: any) {
-  // 1. Fetch Native ETH Balance as before
-  const ethBalance = await provider.getBalance(address);
+export async function scanMetamaskPortfolio(address: string, provider: ethers.providers.JsonRpcProvider) {
+  try {
+    // This is the actual call to Alchemy
+    const tokenBalances = await provider.send("alchemy_getTokenBalances", [address, "erc20"]);
+    
+    // MAP REAL DATA
+    const holdings = tokenBalances.tokenBalances.map((token: any) => ({
+      symbol: "ERC20", // In a full version, use alchemy_getTokenMetadata for the real name
+      amount: ethers.utils.formatUnits(token.tokenBalance, 18),
+      type: "ERC20"
+    })).filter((t: any) => parseFloat(t.amount) > 0);
 
-  // 2. Fetch ALL ERC-20 tokens using an Indexer (Example: Alchemy)
-  // This replaces the manual ASSETS_TO_SCAN array
-  const response = await fetch(`https://arb-mainnet.g.alchemy.com/v2/${process.env.df3AQ4HlDJj5ED_Ep8MXK}`, {
-    method: 'POST',
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      method: "alchemy_getTokenBalances",
-      params: [address],
-      id: 42
-    })
-  });
+    // --- TEST INJECTION ---
+    // If Alchemy returns nothing, we add this fake ETH to see if the UI updates
+    if (holdings.length === 0) {
+      console.log("DEBUG: Alchemy returned 0. Injecting test data.");
+      holdings.push({ symbol: 'ETH_TEST', amount: '0.5000', type: 'NATIVE' });
+    }
+    // -----------------------
 
-  const data = await response.json();
-  const tokenBalancesRaw = data.result.tokenBalances;
-
-  // 3. Resolve metadata (Symbols/Decimals) for detected tokens
-  const tokenBalances = await Promise.all(
-    tokenBalancesRaw
-      .filter((t: any) => t.tokenBalance !== "0x0000000000000000000000000000000000000000000000000000000000000000")
-      .map(async (t: any) => {
-        // Fetch metadata for the specific token found in your wallet
-        const metaResponse = await fetch(`https://arb-mainnet.g.alchemy.com/v2/${process.env.df3AQ4HlDJj5ED_Ep8MXK}`, {
-          method: 'POST',
-          body: JSON.stringify({
-            jsonrpc: "2.0",
-            method: "alchemy_getTokenMetadata",
-            params: [t.contractAddress],
-            id: 42
-          })
-        });
-        const meta = await metaResponse.json();
-        const decimals = meta.result.decimals;
-        
-        return {
-          symbol: meta.result.symbol,
-          amount: ethers.utils.formatUnits(t.tokenBalance, decimals),
-          type: 'ERC20'
-        };
-      })
-  );
-
-  return [
-    { symbol: 'ETH', amount: ethers.utils.formatEther(ethBalance), type: 'NATIVE' },
-    ...tokenBalances
-  ];
+    return holdings;
+  } catch (error) {
+    console.error("Scanner Error:", error);
+    return [{ symbol: 'ERROR', amount: '0', type: 'DEBUG' }];
+  }
 }

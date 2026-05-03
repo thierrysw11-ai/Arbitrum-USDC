@@ -18,24 +18,24 @@ export const generateEliteReport = (data: any): string => {
 
 **SENTINEL ELITE RISK ASSESSMENT**
 
-Your Aave V3 position on Arbitrum shows a stable Health Factor of ${data.healthFactor || '0.00'}, supported by strong USDC collateral.[cite: 1]
+Your Aave V3 position on Arbitrum shows a stable Health Factor of ${data.healthFactor || '0.00'}, supported by strong USDC collateral.
 
 **CURRENT POSITIONS**
-• **USDC Supply**: $${data.totalCollateralUSD || '0'} (Core collateral, stable)[cite: 1]
-• **WBTC Borrow**: Active (volatile asset exposure)[cite: 1]
-• **DAI Borrow**: Active (stablecoin debt)[cite: 1]
-• **Other MetaMask Holdings**: ${holdingsText}[cite: 1]
+• **USDC Supply**: $${data.totalCollateralUSD || '0'} (Core collateral, stable)
+• **WBTC Borrow**: Active (volatile asset exposure)
+• **DAI Borrow**: Active (stablecoin debt)
+• **Other MetaMask Holdings**: ${holdingsText}
 
 **MARKET MOMENTUM & FORCES**
-USDC remains the dominant stablecoin on Arbitrum with strong institutional inflows. WBTC borrow exposure carries directional risk to Bitcoin price momentum. Current market forces favor USDC collateral as a hedge against volatility in ETH and BTC.[cite: 1]
+USDC remains the dominant stablecoin on Arbitrum with strong institutional inflows. WBTC borrow exposure carries directional risk to Bitcoin price momentum. Current market forces favor USDC collateral as a hedge against volatility in ETH and BTC.
 
 **AGENT ASSESSMENT & RISK ANALYSIS**
-• Your USDC collateral is acting as a **stable floor** for WBTC and DAI debt positions — this is a classic **Elite Hedge** configuration.[cite: 1]
-• **Risk Exposure**: Moderate. WBTC borrow introduces BTC price risk, but USDC over-collateralization provides good protection.[cite: 1]
-• **Recommended Action**: Migrate $${migrateMin}–$${migrateMax} USDC from Aave to Morpho Gauntlet vault for +2.79% APY (estimated annual yield increase of ~$${estimatedYield}).[cite: 1]
-• Maintain at least 35% USDC on Aave for maximum liquidity during market stress.[cite: 1]
-• Overall portfolio risk: **Low to Medium** — well-positioned for current market conditions.[cite: 1]
+• Your USDC collateral is acting as a **stable floor** for WBTC and DAI debt positions — this is a classic **Elite Hedge** configuration.
+• **Risk Exposure**: Moderate. WBTC borrow introduces BTC price risk, but USDC over-collateralization provides good protection.
+• **Recommended Action**: Migrate $${migrateMin}–$${migrateMax} USDC from Aave to Morpho Gauntlet vault for +2.79% APY (estimated annual yield increase of ~$${estimatedYield}).
+• Maintain at least 35% USDC on Aave for maximum liquidity during market stress.
+• Overall portfolio risk: **Low to Medium** — well-positioned for current market conditions.
 
-**Risk Summary**: Strong USDC backing reduces liquidation probability even if WBTC experiences a 20-30% drawdown.[cite: 1]
+**Risk Summary**: Strong USDC backing reduces liquidation probability even if WBTC experiences a 20-30% drawdown.
 `.trim();
 };
