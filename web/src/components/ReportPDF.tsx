@@ -6,17 +6,20 @@
  * price: a multi-page document they can save, email, share, or feed
  * into another AI tool as context.
  *
- * Built with @react-pdf/renderer (client-side; no server cost). Uses
- * a small palette + minimal layout vocabulary so the file size stays
- * compact (~50–100 KB) and rendering is fast.
+ * Built with @react-pdf/renderer (client-side; no server cost). All
+ * charts are drawn with native <Svg> primitives so the file stays
+ * compact (~80–200 KB) and text remains selectable / searchable.
  *
- * Sections (each conditional on data being present):
- *   1. Cover         — logo, wallet, date, executive summary
- *   2. Aave V3       — HF, collateral, debt, per-asset breakdown
- *   3. Monte Carlo   — P(liq), percentiles, Sharpe, recommendation
- *   4. Composition   — sector allocation, market cap, top holdings
- *   5. Correlation   — pairwise matrix as table
- *   6. Footer        — disclaimer + branding
+ * Page sequence (each conditional on data being present):
+ *   1. Cover         — branding, wallet, date, executive summary, x402 receipt
+ *   2. Aave V3 Risk  — HF gauge, key metrics, position table, shock waterfall
+ *   3. Monte Carlo   — distribution histogram + 50-path sparklines + verdict
+ *   4. Risk-adj.     — Sharpe block + efficient-frontier scatter + recommendation
+ *   5. Composition   — concentration, asset-class donut + table, sector + market-cap bars
+ *   6. Top Holdings  — ranked table with sector tags
+ *   7. Correlation   — color-coded heatmap + plain-English verdict
+ *   8. Wallet        — per-chain native + ERC-20 breakdown, spam separated
+ *   9. AI Narrative  — the Sentinel agent's structured prose assessment
  */
 
 import React from 'react';
@@ -26,29 +29,42 @@ import {
   Text,
   View,
   StyleSheet,
-  Font,
 } from '@react-pdf/renderer';
 
 import type { ReportData } from '@/lib/report/types';
+import {
+  AssetClassDonut,
+  CHART_COLORS,
+  CorrelationHeatmap,
+  CorrelationLegend,
+  EfficientFrontierScatter,
+  HfGauge,
+  HorizontalBars,
+  MonteCarloHistogram,
+  SamplePathsChart,
+  ShockWaterfall,
+  hfColor,
+  supersectorColor,
+} from './report/ReportCharts';
 
 // =========================================================================
 // Palette + base styles
 // =========================================================================
 
 const COLORS = {
-  bg: '#0a0a0a',
-  card: '#161616',
-  border: '#27272a',
-  text: '#fafafa',
-  textMuted: '#a1a1aa',
-  textSubtle: '#71717a',
-  accent: '#a855f7',
+  bg: CHART_COLORS.bg,
+  card: CHART_COLORS.card,
+  border: CHART_COLORS.border,
+  text: CHART_COLORS.text,
+  textMuted: CHART_COLORS.textMuted,
+  textSubtle: CHART_COLORS.textSubtle,
+  accent: CHART_COLORS.accent,
   accentLight: '#c084fc',
-  safe: '#22c55e',
-  caution: '#f59e0b',
-  risky: '#ef4444',
-  collateral: '#22c55e',
-  debt: '#ef4444',
+  safe: CHART_COLORS.safe,
+  caution: CHART_COLORS.caution,
+  risky: CHART_COLORS.risky,
+  collateral: CHART_COLORS.safe,
+  debt: CHART_COLORS.risky,
 };
 
 const styles = StyleSheet.create({
@@ -60,8 +76,8 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   header: {
-    marginBottom: 24,
-    paddingBottom: 12,
+    marginBottom: 18,
+    paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
     flexDirection: 'row',
@@ -69,7 +85,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   brand: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: 'Helvetica-Bold',
     color: COLORS.accent,
     letterSpacing: 1,
@@ -94,20 +110,27 @@ const styles = StyleSheet.create({
   sectionSubtitle: {
     fontSize: 9,
     color: COLORS.textMuted,
-    marginBottom: 16,
+    marginBottom: 14,
+  },
+  subTitle: {
+    fontSize: 11,
+    fontFamily: 'Helvetica-Bold',
+    color: COLORS.text,
+    marginBottom: 6,
+    marginTop: 8,
   },
   card: {
     backgroundColor: COLORS.card,
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: 6,
-    padding: 12,
-    marginBottom: 10,
+    padding: 10,
+    marginBottom: 8,
   },
   metricGrid: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   metricCard: {
     flex: 1,
@@ -115,7 +138,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: 6,
-    padding: 10,
+    padding: 8,
   },
   metricLabel: {
     fontSize: 7,
@@ -123,16 +146,16 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     textTransform: 'uppercase',
     fontFamily: 'Helvetica-Bold',
-    marginBottom: 4,
+    marginBottom: 3,
   },
   metricValue: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: 'Helvetica-Bold',
   },
   metricHint: {
     fontSize: 7,
     color: COLORS.textSubtle,
-    marginTop: 3,
+    marginTop: 2,
   },
   table: {
     borderWidth: 1,
@@ -143,7 +166,7 @@ const styles = StyleSheet.create({
   tableHeaderRow: {
     flexDirection: 'row',
     backgroundColor: '#1a1a1a',
-    paddingVertical: 6,
+    paddingVertical: 5,
     paddingHorizontal: 8,
   },
   tableHeaderCell: {
@@ -155,7 +178,7 @@ const styles = StyleSheet.create({
   },
   tableRow: {
     flexDirection: 'row',
-    paddingVertical: 5,
+    paddingVertical: 4,
     paddingHorizontal: 8,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
@@ -172,8 +195,8 @@ const styles = StyleSheet.create({
   },
   bullet: {
     flexDirection: 'row',
-    marginBottom: 4,
-    paddingLeft: 8,
+    marginBottom: 3,
+    paddingLeft: 4,
   },
   bulletDot: {
     color: COLORS.textSubtle,
@@ -183,15 +206,16 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 9,
     color: COLORS.text,
-    lineHeight: 1.5,
+    lineHeight: 1.4,
   },
   recommendBox: {
     backgroundColor: '#1a0f2e',
     borderWidth: 1,
     borderColor: COLORS.accent,
     borderRadius: 6,
-    padding: 12,
-    marginTop: 8,
+    padding: 10,
+    marginTop: 6,
+    marginBottom: 8,
   },
   recommendLabel: {
     fontSize: 7,
@@ -199,11 +223,11 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     textTransform: 'uppercase',
     fontFamily: 'Helvetica-Bold',
-    marginBottom: 4,
+    marginBottom: 3,
   },
   footer: {
     position: 'absolute',
-    bottom: 24,
+    bottom: 18,
     left: 36,
     right: 36,
     flexDirection: 'row',
@@ -211,14 +235,16 @@ const styles = StyleSheet.create({
     fontSize: 7,
     color: COLORS.textSubtle,
   },
-  badge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 3,
-    fontSize: 7,
-    fontFamily: 'Helvetica-Bold',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
+  legendRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 4,
+  },
+  legendDot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 8,
   },
 });
 
@@ -250,10 +276,12 @@ const fmtDate = (d: Date): string =>
     day: 'numeric',
   });
 
-const hfColor = (hf: number): string => {
-  if (hf < 1.2) return COLORS.risky;
-  if (hf < 1.5) return COLORS.caution;
-  return COLORS.safe;
+const fmtToken = (n: number | null): string => {
+  if (n === null) return '—';
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(2)}K`;
+  if (n >= 1) return n.toFixed(4);
+  return n.toFixed(6);
 };
 
 // =========================================================================
@@ -275,7 +303,7 @@ function CoverPage({ data }: { data: ReportData }) {
         <Text style={styles.pageNum}>1</Text>
       </View>
 
-      <View style={{ marginTop: 60 }}>
+      <View style={{ marginTop: 50 }}>
         <Text
           style={{
             fontSize: 9,
@@ -301,13 +329,13 @@ function CoverPage({ data }: { data: ReportData }) {
 
         <View
           style={{
-            paddingTop: 16,
-            paddingBottom: 16,
+            paddingTop: 14,
+            paddingBottom: 14,
             borderTopWidth: 1,
             borderTopColor: COLORS.border,
             borderBottomWidth: 1,
             borderBottomColor: COLORS.border,
-            marginBottom: 24,
+            marginBottom: 18,
           }}
         >
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -336,30 +364,55 @@ function CoverPage({ data }: { data: ReportData }) {
           </View>
         </View>
 
-        <Text style={[styles.metricLabel, { marginBottom: 8 }]}>Executive summary</Text>
+        <Text style={[styles.metricLabel, { marginBottom: 6 }]}>Executive summary</Text>
         <Text style={styles.paragraph}>
           {buildExecutiveSummary(data)}
         </Text>
+
+        <Text style={[styles.metricLabel, { marginTop: 14, marginBottom: 6 }]}>
+          What's in this report
+        </Text>
+        <View>
+          {[
+            data.aave && 'Aave V3 risk profile with HF gauge and stress-test waterfall',
+            data.monteCarlo && '1,000-path Monte Carlo simulation with distribution + sample paths',
+            data.monteCarlo && 'Risk-adjusted return (Sharpe) and efficient-frontier sweep',
+            data.composition && 'Portfolio composition: asset classes, sectors, market caps, top holdings',
+            data.correlation && 'Pairwise asset correlation heatmap',
+            data.wallet && 'Per-chain wallet holdings with spam-token separation',
+            data.narrative && 'AI-generated structured risk narrative',
+          ]
+            .filter(Boolean)
+            .map((line, i) => (
+              <View key={i} style={styles.bullet}>
+                <Text style={styles.bulletDot}>·</Text>
+                <Text style={styles.bulletText}>{line as string}</Text>
+              </View>
+            ))}
+        </View>
       </View>
 
       {data.meta.settlementTxHash && (
         <View
           style={{
-            marginTop: 'auto',
-            padding: 10,
+            position: 'absolute',
+            left: 36,
+            right: 36,
+            bottom: 50,
+            padding: 8,
             backgroundColor: COLORS.card,
             borderRadius: 6,
             borderWidth: 1,
             borderColor: COLORS.border,
           }}
         >
-          <Text style={{ fontSize: 7, color: COLORS.textSubtle, marginBottom: 3 }}>
+          <Text style={{ fontSize: 7, color: COLORS.textSubtle, marginBottom: 2 }}>
             x402 settlement
           </Text>
-          <Text style={{ fontSize: 8, fontFamily: 'Courier', color: COLORS.text }}>
+          <Text style={{ fontSize: 7, fontFamily: 'Courier', color: COLORS.text }}>
             {data.meta.settlementTxHash}
           </Text>
-          <Text style={{ fontSize: 7, color: COLORS.textSubtle, marginTop: 3 }}>
+          <Text style={{ fontSize: 7, color: COLORS.textSubtle, marginTop: 2 }}>
             On-chain receipt for the 0.01 USDC payment that unlocked this report
           </Text>
         </View>
@@ -392,6 +445,11 @@ function buildExecutiveSummary(data: ReportData): string {
       `Wider portfolio is ${c.concentration?.verdict ?? 'analyzed'} — top-3 share ${fmtPct(c.concentration?.topThreePct ?? 0, 1)}, effective N = ${(c.concentration?.effectiveN ?? 0).toFixed(1)}.`
     );
   }
+  if (data.correlation) {
+    parts.push(
+      `Average pairwise correlation: ${data.correlation.averagePairwise.toFixed(2)}.`
+    );
+  }
   if (parts.length === 0) {
     return 'Insufficient data for an executive summary.';
   }
@@ -399,59 +457,78 @@ function buildExecutiveSummary(data: ReportData): string {
 }
 
 // =========================================================================
-// Aave V3 page
+// Aave V3 page — gauge + metrics + position table + shock waterfall
 // =========================================================================
 
-function AavePage({ data }: { data: ReportData }) {
+function AavePage({ data, pageNum }: { data: ReportData; pageNum: number }) {
   if (!data.aave) return null;
+  const a = data.aave;
   return (
     <Page size="A4" style={styles.page}>
-      <PageHeader pageNum={2} />
+      <PageHeader pageNum={pageNum} />
       <Text style={styles.sectionTitle}>Aave V3 Risk Profile</Text>
       <Text style={styles.sectionSubtitle}>
-        Live position on {data.aave.chainName} · read directly from the Aave V3 Pool contract
+        Live position on {a.chainName} · read directly from the Aave V3 Pool contract
       </Text>
 
-      <View style={styles.metricGrid}>
-        <MetricCard
-          label="Health Factor"
-          value={fmtHf(data.aave.healthFactor)}
-          color={hfColor(data.aave.healthFactor)}
-          hint="Liquidation at HF < 1.0"
-        />
-        <MetricCard
-          label="Total Collateral"
-          value={fmtUsd(data.aave.totalCollateralUsd)}
-          color={COLORS.collateral}
-        />
-        <MetricCard
-          label="Total Debt"
-          value={fmtUsd(data.aave.totalDebtUsd)}
-          color={COLORS.debt}
-        />
+      {/* HF gauge alongside the metric grid */}
+      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 8 }}>
+        <View
+          style={{
+            backgroundColor: COLORS.card,
+            borderWidth: 1,
+            borderColor: COLORS.border,
+            borderRadius: 6,
+            padding: 8,
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 170,
+          }}
+        >
+          <Text style={styles.metricLabel}>Health Factor</Text>
+          <HfGauge hf={a.healthFactor} width={150} height={90} />
+          <Text style={{ fontSize: 7, color: COLORS.textSubtle }}>
+            Liquidation at HF &lt; 1.00
+          </Text>
+        </View>
+
+        <View style={{ flex: 1, gap: 8 }}>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <MetricCard
+              label="Total Collateral"
+              value={fmtUsd(a.totalCollateralUsd)}
+              color={COLORS.collateral}
+            />
+            <MetricCard
+              label="Total Debt"
+              value={fmtUsd(a.totalDebtUsd)}
+              color={COLORS.debt}
+            />
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <MetricCard
+              label="Liq Threshold"
+              value={`${a.liquidationThresholdPct.toFixed(2)}%`}
+              color={COLORS.text}
+            />
+            <MetricCard
+              label="Max LTV"
+              value={`${a.maxLtvPct.toFixed(2)}%`}
+              color={COLORS.text}
+            />
+            <MetricCard
+              label="Net Worth"
+              value={fmtUsd(a.totalCollateralUsd - a.totalDebtUsd)}
+              color={COLORS.accent}
+            />
+          </View>
+        </View>
       </View>
 
-      <View style={styles.metricGrid}>
-        <MetricCard
-          label="Liq Threshold"
-          value={`${data.aave.liquidationThresholdPct.toFixed(2)}%`}
-          color={COLORS.text}
-        />
-        <MetricCard
-          label="Max LTV"
-          value={`${data.aave.maxLtvPct.toFixed(2)}%`}
-          color={COLORS.text}
-        />
-        <MetricCard
-          label="Net Worth"
-          value={fmtUsd(data.aave.totalCollateralUsd - data.aave.totalDebtUsd)}
-          color={COLORS.accent}
-        />
-      </View>
-
-      {data.aave.positions.length > 0 && (
+      {/* Per-asset positions */}
+      {a.positions.length > 0 && (
         <View>
-          <Text style={[styles.metricLabel, { marginTop: 14, marginBottom: 6 }]}>
+          <Text style={[styles.metricLabel, { marginTop: 4, marginBottom: 4 }]}>
             Per-asset positions
           </Text>
           <View style={styles.table}>
@@ -461,7 +538,7 @@ function AavePage({ data }: { data: ReportData }) {
               <Text style={[styles.tableHeaderCell, { flex: 2, textAlign: 'right' }]}>Borrowed</Text>
               <Text style={[styles.tableHeaderCell, { flex: 2, textAlign: 'right' }]}>Liq Price</Text>
             </View>
-            {data.aave.positions.map((p, i) => (
+            {a.positions.map((p, i) => (
               <View key={i} style={styles.tableRow}>
                 <Text style={[styles.tableCell, { flex: 2, fontFamily: 'Courier-Bold' }]}>
                   {p.symbol}
@@ -481,29 +558,59 @@ function AavePage({ data }: { data: ReportData }) {
         </View>
       )}
 
+      {/* Shock waterfall — only when there are non-stable assets */}
+      {a.shocks.length > 0 && (
+        <View style={{ marginTop: 10 }}>
+          <Text style={styles.metricLabel}>
+            Stress test — Health Factor under market-wide non-stable shocks
+          </Text>
+          <View
+            style={{
+              backgroundColor: COLORS.card,
+              borderWidth: 1,
+              borderColor: COLORS.border,
+              borderRadius: 6,
+              padding: 8,
+              marginTop: 4,
+            }}
+          >
+            <ShockWaterfall
+              shocks={a.shocks}
+              currentHf={a.healthFactor}
+              width={510}
+              height={120}
+            />
+            <Text style={{ fontSize: 7, color: COLORS.textSubtle, marginTop: 4 }}>
+              Multiplicative price shock applied to every non-stable collateral. Stables held
+              flat. The dashed red line marks HF = 1 (liquidation).
+            </Text>
+          </View>
+        </View>
+      )}
+
       <PageFooter />
     </Page>
   );
 }
 
 // =========================================================================
-// Monte Carlo page
+// Monte Carlo page 1 — metrics + histogram + sample paths
 // =========================================================================
 
-function MonteCarloPage({ data }: { data: ReportData }) {
+function MonteCarloDistributionPage({
+  data,
+  pageNum,
+}: {
+  data: ReportData;
+  pageNum: number;
+}) {
   if (!data.monteCarlo) return null;
   const mc = data.monteCarlo;
-  const levelColor =
-    mc.interpretation.level === 'safe'
-      ? COLORS.safe
-      : mc.interpretation.level === 'caution'
-        ? COLORS.caution
-        : COLORS.risky;
   const fmtPctSimple = (n: number) => `${(n * 100).toFixed(2)}%`;
 
   return (
     <Page size="A4" style={styles.page}>
-      <PageHeader pageNum={3} />
+      <PageHeader pageNum={pageNum} />
       <Text style={styles.sectionTitle}>Monte Carlo Risk Simulation</Text>
       <Text style={styles.sectionSubtitle}>
         {mc.paths} GBM-simulated price paths over {mc.horizonDays} days · daily resolution · realized volatilities per asset
@@ -532,6 +639,74 @@ function MonteCarloPage({ data }: { data: ReportData }) {
         />
       </View>
 
+      {/* Histogram */}
+      <View style={styles.card}>
+        <Text style={styles.metricLabel}>Terminal Health Factor Distribution</Text>
+        <MonteCarloHistogram
+          bins={mc.histogram.bins}
+          counts={mc.histogram.counts}
+          width={510}
+          height={130}
+        />
+      </View>
+
+      {/* Sample paths */}
+      <View style={styles.card}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+          <Text style={styles.metricLabel}>
+            {mc.samplePaths.length} sample paths · {mc.horizonDays}-day horizon
+          </Text>
+          <Text style={{ fontSize: 7, color: COLORS.risky, fontFamily: 'Helvetica-Bold' }}>
+            Liquidation: HF &lt; 1.00
+          </Text>
+        </View>
+        <SamplePathsChart
+          paths={mc.samplePaths}
+          horizonDays={mc.horizonDays}
+          width={510}
+          height={150}
+        />
+      </View>
+
+      <Text style={{ fontSize: 7, color: COLORS.textSubtle, marginTop: 4 }}>
+        Shocked assets: {mc.shockedAssets.length > 0 ? mc.shockedAssets.join(', ') : 'none (stable-only position)'}
+      </Text>
+
+      <PageFooter />
+    </Page>
+  );
+}
+
+// =========================================================================
+// Monte Carlo page 2 — verdict + recommendation + Sharpe + frontier
+// =========================================================================
+
+function MonteCarloAnalysisPage({
+  data,
+  pageNum,
+}: {
+  data: ReportData;
+  pageNum: number;
+}) {
+  if (!data.monteCarlo) return null;
+  const mc = data.monteCarlo;
+  const levelColor =
+    mc.interpretation.level === 'safe'
+      ? COLORS.safe
+      : mc.interpretation.level === 'caution'
+        ? COLORS.caution
+        : COLORS.risky;
+  const fmtPctSimple = (n: number) => `${(n * 100).toFixed(2)}%`;
+
+  return (
+    <Page size="A4" style={styles.page}>
+      <PageHeader pageNum={pageNum} />
+      <Text style={styles.sectionTitle}>Risk Verdict & Frontier</Text>
+      <Text style={styles.sectionSubtitle}>
+        Plain-English read of the simulation, plus risk-adjusted return and the leverage frontier
+      </Text>
+
+      {/* Verdict card */}
       <View style={[styles.card, { borderColor: levelColor }]}>
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
           <View
@@ -574,9 +749,8 @@ function MonteCarloPage({ data }: { data: ReportData }) {
         </Text>
       </View>
 
-      <Text style={[styles.metricLabel, { marginTop: 14, marginBottom: 6 }]}>
-        Risk-adjusted return
-      </Text>
+      {/* Risk-adjusted return */}
+      <Text style={styles.subTitle}>Risk-adjusted return</Text>
       <View style={styles.metricGrid}>
         <MetricCard
           label="Sharpe Ratio"
@@ -600,9 +774,24 @@ function MonteCarloPage({ data }: { data: ReportData }) {
         />
       </View>
 
-      <Text style={{ fontSize: 7, color: COLORS.textSubtle, marginTop: 14 }}>
-        Shocked assets: {mc.shockedAssets.length > 0 ? mc.shockedAssets.join(', ') : 'none (stable-only position)'}
-      </Text>
+      {/* Efficient frontier */}
+      <Text style={styles.subTitle}>Efficient frontier — leverage sweep</Text>
+      <View style={styles.card}>
+        <EfficientFrontierScatter
+          points={mc.efficientFrontier.points}
+          width={510}
+          height={170}
+        />
+        <View style={styles.legendRow}>
+          <LegendDot color={CHART_COLORS.blue} label="Current position" />
+          <LegendDot color={COLORS.safe} label="Optimal Sharpe (feasible)" />
+          <LegendDot color={COLORS.textSubtle} label="Other levels" />
+          <LegendDot color={COLORS.risky} label="Infeasible (P(liq) > 5% or HF₀ < 1)" />
+        </View>
+        <Text style={{ fontSize: 9, color: COLORS.text, marginTop: 6, lineHeight: 1.4 }}>
+          {mc.efficientFrontier.verdict}
+        </Text>
+      </View>
 
       <PageFooter />
     </Page>
@@ -610,17 +799,39 @@ function MonteCarloPage({ data }: { data: ReportData }) {
 }
 
 // =========================================================================
-// Composition page
+// Composition page — concentration + donut + asset class table + bars
 // =========================================================================
 
-function CompositionPage({ data }: { data: ReportData }) {
+function CompositionPage({ data, pageNum }: { data: ReportData; pageNum: number }) {
   if (!data.composition) return null;
   const comp = data.composition.composition;
   const conc = comp.concentration;
 
+  // Sector bars — top 8 by USD
+  const sectorBars = comp.bySector
+    .slice(0, 8)
+    .map((r) => ({
+      label: r.sector,
+      pct: r.pct,
+      color: supersectorColor(r.supersector),
+    }));
+
+  const MC_COLORS: Record<string, string> = {
+    large: '#22c55e',
+    mid: '#3b82f6',
+    small: '#f59e0b',
+    micro: '#ef4444',
+    unknown: '#71717a',
+  };
+  const mcBars = comp.byMarketCap.map((r) => ({
+    label: r.label,
+    pct: r.pct,
+    color: MC_COLORS[r.bucket] ?? '#71717a',
+  }));
+
   return (
     <Page size="A4" style={styles.page}>
-      <PageHeader pageNum={4} />
+      <PageHeader pageNum={pageNum} />
       <Text style={styles.sectionTitle}>Portfolio Composition</Text>
       <Text style={styles.sectionSubtitle}>
         {data.composition.xrayApplied
@@ -638,7 +849,7 @@ function CompositionPage({ data }: { data: ReportData }) {
               color: COLORS.accent,
               textTransform: 'capitalize',
               marginTop: 4,
-              marginBottom: 8,
+              marginBottom: 6,
             }}
           >
             {conc.verdict}
@@ -660,29 +871,89 @@ function CompositionPage({ data }: { data: ReportData }) {
         </View>
       )}
 
-      <Text style={[styles.metricLabel, { marginTop: 12, marginBottom: 6 }]}>
-        Asset class allocation
-      </Text>
-      <View style={styles.table}>
-        <View style={styles.tableHeaderRow}>
-          <Text style={[styles.tableHeaderCell, { flex: 4 }]}>Supersector</Text>
-          <Text style={[styles.tableHeaderCell, { flex: 2, textAlign: 'right' }]}>USD</Text>
-          <Text style={[styles.tableHeaderCell, { flex: 1, textAlign: 'right' }]}>%</Text>
+      {/* Donut + asset class table side by side */}
+      <Text style={styles.subTitle}>Asset class allocation</Text>
+      <View style={{ flexDirection: 'row', gap: 12, marginBottom: 8 }}>
+        <View
+          style={{
+            backgroundColor: COLORS.card,
+            borderWidth: 1,
+            borderColor: COLORS.border,
+            borderRadius: 6,
+            padding: 6,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <AssetClassDonut rows={comp.bySupersector} size={130} />
         </View>
-        {comp.bySupersector.map((row, i) => (
-          <View key={i} style={styles.tableRow}>
-            <Text style={[styles.tableCell, { flex: 4 }]}>{row.supersector}</Text>
-            <Text style={[styles.tableCell, { flex: 2, textAlign: 'right' }]}>{fmtUsd(row.usd)}</Text>
-            <Text style={[styles.tableCell, { flex: 1, textAlign: 'right', fontFamily: 'Helvetica-Bold' }]}>
-              {row.pct.toFixed(1)}%
-            </Text>
+        <View style={{ flex: 1 }}>
+          <View style={styles.table}>
+            <View style={styles.tableHeaderRow}>
+              <Text style={[styles.tableHeaderCell, { width: 14 }]}> </Text>
+              <Text style={[styles.tableHeaderCell, { flex: 3 }]}>Supersector</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 2, textAlign: 'right' }]}>USD</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 1, textAlign: 'right' }]}>%</Text>
+            </View>
+            {comp.bySupersector.map((row, i) => (
+              <View key={i} style={styles.tableRow}>
+                <View
+                  style={{
+                    width: 8,
+                    height: 8,
+                    backgroundColor: supersectorColor(row.supersector),
+                    borderRadius: 1,
+                    marginRight: 6,
+                    alignSelf: 'center',
+                  }}
+                />
+                <Text style={[styles.tableCell, { flex: 3 }]}>{row.supersector}</Text>
+                <Text style={[styles.tableCell, { flex: 2, textAlign: 'right' }]}>{fmtUsd(row.usd)}</Text>
+                <Text style={[styles.tableCell, { flex: 1, textAlign: 'right', fontFamily: 'Helvetica-Bold' }]}>
+                  {row.pct.toFixed(1)}%
+                </Text>
+              </View>
+            ))}
           </View>
-        ))}
+        </View>
       </View>
 
-      <Text style={[styles.metricLabel, { marginTop: 12, marginBottom: 6 }]}>
-        Top holdings
+      {/* Sector + market-cap bar charts side by side */}
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.subTitle}>Sector allocation (top 8)</Text>
+          <View style={styles.card}>
+            <HorizontalBars rows={sectorBars} width={250} rowHeight={14} />
+          </View>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.subTitle}>Market cap breakdown</Text>
+          <View style={styles.card}>
+            <HorizontalBars rows={mcBars} width={250} rowHeight={14} />
+          </View>
+        </View>
+      </View>
+
+      <PageFooter />
+    </Page>
+  );
+}
+
+// =========================================================================
+// Top Holdings page
+// =========================================================================
+
+function TopHoldingsPage({ data, pageNum }: { data: ReportData; pageNum: number }) {
+  if (!data.composition) return null;
+  const comp = data.composition.composition;
+  return (
+    <Page size="A4" style={styles.page}>
+      <PageHeader pageNum={pageNum} />
+      <Text style={styles.sectionTitle}>Top Holdings</Text>
+      <Text style={styles.sectionSubtitle}>
+        Ranked by USD value · sector tag from the composition registry
       </Text>
+
       <View style={styles.table}>
         <View style={styles.tableHeaderRow}>
           <Text style={[styles.tableHeaderCell, { width: 22 }]}>#</Text>
@@ -691,10 +962,21 @@ function CompositionPage({ data }: { data: ReportData }) {
           <Text style={[styles.tableHeaderCell, { flex: 2, textAlign: 'right' }]}>USD</Text>
           <Text style={[styles.tableHeaderCell, { flex: 1, textAlign: 'right' }]}>%</Text>
         </View>
-        {comp.topHoldings.slice(0, 10).map((h, i) => (
+        {comp.topHoldings.map((h, i) => (
           <View key={i} style={styles.tableRow}>
             <Text style={[styles.tableCell, { width: 22, color: COLORS.textSubtle }]}>{i + 1}</Text>
-            <Text style={[styles.tableCell, { flex: 2, fontFamily: 'Courier-Bold' }]}>{h.symbol}</Text>
+            <View style={{ flex: 2, flexDirection: 'row', alignItems: 'center' }}>
+              <View
+                style={{
+                  width: 6,
+                  height: 6,
+                  backgroundColor: supersectorColor(h.supersector),
+                  borderRadius: 3,
+                  marginRight: 5,
+                }}
+              />
+              <Text style={[styles.tableCell, { fontFamily: 'Courier-Bold' }]}>{h.symbol}</Text>
+            </View>
             <Text style={[styles.tableCell, { flex: 3, color: COLORS.textMuted, fontSize: 8 }]}>{h.sector}</Text>
             <Text style={[styles.tableCell, { flex: 2, textAlign: 'right' }]}>{fmtUsd(h.usd)}</Text>
             <Text style={[styles.tableCell, { flex: 1, textAlign: 'right', fontFamily: 'Helvetica-Bold' }]}>
@@ -710,24 +992,24 @@ function CompositionPage({ data }: { data: ReportData }) {
 }
 
 // =========================================================================
-// Correlation page
+// Correlation page — color-coded heatmap
 // =========================================================================
 
-function CorrelationPage({ data }: { data: ReportData }) {
+function CorrelationPage({ data, pageNum }: { data: ReportData; pageNum: number }) {
   if (!data.correlation) return null;
   const { symbols, matrix, averagePairwise } = data.correlation;
   const avgVerdict =
     averagePairwise > 0.7
-      ? { color: COLORS.risky, label: 'Highly correlated portfolio.' }
+      ? { color: COLORS.risky, label: 'Highly correlated portfolio.', detail: 'Your assets move largely together — the diversification you appear to have on paper isn\'t real risk diversification. A market-wide drawdown would hit most positions in lockstep.' }
       : averagePairwise > 0.4
-        ? { color: COLORS.caution, label: 'Moderately correlated.' }
+        ? { color: COLORS.caution, label: 'Moderately correlated.', detail: 'Your portfolio has some genuine diversification but tilts toward co-movement during market stress. Adding lower-correlation assets (cross-sector, stables) would improve risk decomposition.' }
         : averagePairwise > 0.1
-          ? { color: COLORS.safe, label: 'Reasonably diversified.' }
-          : { color: COLORS.safe, label: 'Strongly diversified — near-independent moves.' };
+          ? { color: COLORS.safe, label: 'Reasonably diversified.', detail: 'Your assets show meaningful independent variation — drawdowns in one are not automatically drawdowns in others.' }
+          : { color: COLORS.safe, label: 'Strongly diversified.', detail: 'Asset moves are nearly independent or even inversely related — this is the configuration that minimizes portfolio variance.' };
 
   return (
     <Page size="A4" style={styles.page}>
-      <PageHeader pageNum={5} />
+      <PageHeader pageNum={pageNum} />
       <Text style={styles.sectionTitle}>Asset Correlation</Text>
       <Text style={styles.sectionSubtitle}>
         Pairwise Pearson correlation of 14-day daily log returns
@@ -738,57 +1020,203 @@ function CorrelationPage({ data }: { data: ReportData }) {
         <Text style={{ fontSize: 18, fontFamily: 'Helvetica-Bold', color: avgVerdict.color, marginTop: 4 }}>
           {averagePairwise.toFixed(2)}
         </Text>
-        <Text style={{ fontSize: 9, color: COLORS.text, marginTop: 6 }}>{avgVerdict.label}</Text>
+        <Text style={{ fontSize: 10, color: COLORS.text, marginTop: 4, fontFamily: 'Helvetica-Bold' }}>
+          {avgVerdict.label}
+        </Text>
+        <Text style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 2, lineHeight: 1.4 }}>
+          {avgVerdict.detail}
+        </Text>
       </View>
 
-      {/* Correlation table — render as grid */}
-      <View style={[styles.table, { marginTop: 8 }]}>
-        <View style={styles.tableHeaderRow}>
-          <Text style={[styles.tableHeaderCell, { width: 50 }]}> </Text>
-          {symbols.map((sym, j) => (
-            <Text
-              key={j}
-              style={[styles.tableHeaderCell, { flex: 1, textAlign: 'center' }]}
-            >
-              {sym.length > 6 ? sym.slice(0, 5) + '…' : sym}
-            </Text>
-          ))}
+      <View
+        style={{
+          backgroundColor: COLORS.card,
+          borderWidth: 1,
+          borderColor: COLORS.border,
+          borderRadius: 6,
+          padding: 8,
+          alignItems: 'center',
+        }}
+      >
+        <CorrelationHeatmap symbols={symbols} matrix={matrix} width={500} />
+        <View style={{ marginTop: 6 }}>
+          <CorrelationLegend width={240} />
         </View>
-        {matrix.map((row, i) => (
-          <View key={i} style={styles.tableRow}>
-            <Text style={[styles.tableCell, { width: 50, fontFamily: 'Helvetica-Bold' }]}>
-              {symbols[i].length > 6 ? symbols[i].slice(0, 5) + '…' : symbols[i]}
-            </Text>
-            {row.map((rho, j) => {
-              const cellColor =
-                rho === null || !Number.isFinite(rho)
-                  ? COLORS.textSubtle
-                  : rho > 0.7
-                    ? COLORS.risky
-                    : rho > 0.3
-                      ? COLORS.caution
-                      : rho < -0.3
-                        ? COLORS.collateral
-                        : COLORS.text;
-              return (
-                <Text
-                  key={j}
-                  style={[
-                    styles.tableCell,
-                    { flex: 1, textAlign: 'center', color: cellColor, fontFamily: 'Courier-Bold' },
-                  ]}
-                >
-                  {i === j ? '1.00' : rho === null || !Number.isFinite(rho) ? '—' : rho.toFixed(2)}
-                </Text>
-              );
-            })}
-          </View>
-        ))}
+        <Text style={{ fontSize: 7, color: COLORS.textSubtle, marginTop: 4 }}>
+          Cells colored from −1 (red, anti-correlated) through 0 (dark) to +1 (blue, perfectly correlated).
+        </Text>
       </View>
 
-      <Text style={{ fontSize: 8, color: COLORS.textSubtle, marginTop: 10 }}>
-        Red ≥ 0.7 (high co-movement) · Yellow 0.3–0.7 · Green ≤ −0.3 (anti-correlated)
+      <PageFooter />
+    </Page>
+  );
+}
+
+// =========================================================================
+// Wallet Holdings page
+// =========================================================================
+
+function WalletPage({ data, pageNum }: { data: ReportData; pageNum: number }) {
+  if (!data.wallet) return null;
+  const w = data.wallet;
+  return (
+    <Page size="A4" style={styles.page}>
+      <PageHeader pageNum={pageNum} />
+      <Text style={styles.sectionTitle}>Wallet Holdings</Text>
+      <Text style={styles.sectionSubtitle}>
+        Per-chain native + ERC-20 breakdown · spam tokens flagged separately
       </Text>
+
+      <View style={styles.metricGrid}>
+        <MetricCard label="Total (legitimate)" value={fmtUsd(w.legitimateUsd)} color={COLORS.safe} />
+        <MetricCard label="Spam value" value={fmtUsd(w.spamUsd)} color={COLORS.risky} />
+        <MetricCard label="Chains scanned" value={`${w.chains.length}`} color={COLORS.text} />
+      </View>
+
+      {w.chains.map((c, ci) => {
+        const nonSpam = c.erc20.filter((t) => !t.isSpam);
+        const spam = c.erc20.filter((t) => t.isSpam);
+        return (
+          <View key={ci} style={[styles.card, { marginBottom: 8 }]} wrap={false}>
+            <View
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 4,
+              }}
+            >
+              <Text style={{ fontSize: 11, fontFamily: 'Helvetica-Bold', color: COLORS.text }}>
+                {c.chainName}
+              </Text>
+              <Text style={{ fontSize: 9, color: COLORS.textMuted }}>
+                {fmtUsd(c.totalUsd)}
+                {c.spamUsd > 0 ? ` (${fmtUsd(c.spamUsd)} spam)` : ''}
+              </Text>
+            </View>
+
+            {c.error && (
+              <Text style={{ fontSize: 8, color: COLORS.risky, marginBottom: 4 }}>
+                ⚠ {c.error}
+              </Text>
+            )}
+
+            <View style={styles.table}>
+              <View style={styles.tableHeaderRow}>
+                <Text style={[styles.tableHeaderCell, { flex: 2 }]}>Asset</Text>
+                <Text style={[styles.tableHeaderCell, { flex: 3 }]}>Name</Text>
+                <Text style={[styles.tableHeaderCell, { flex: 2, textAlign: 'right' }]}>Balance</Text>
+                <Text style={[styles.tableHeaderCell, { flex: 2, textAlign: 'right' }]}>USD</Text>
+              </View>
+              {/* Native row */}
+              {c.native.balance > 0 && (
+                <View style={styles.tableRow}>
+                  <Text style={[styles.tableCell, { flex: 2, fontFamily: 'Courier-Bold' }]}>
+                    {c.native.symbol}
+                  </Text>
+                  <Text style={[styles.tableCell, { flex: 3, color: COLORS.textMuted, fontSize: 8 }]}>
+                    Native
+                  </Text>
+                  <Text style={[styles.tableCell, { flex: 2, textAlign: 'right' }]}>
+                    {fmtToken(c.native.balance)}
+                  </Text>
+                  <Text style={[styles.tableCell, { flex: 2, textAlign: 'right' }]}>
+                    {c.native.usdValue !== null ? fmtUsd(c.native.usdValue) : '—'}
+                  </Text>
+                </View>
+              )}
+              {nonSpam.slice(0, 12).map((t, i) => (
+                <View key={`n${i}`} style={styles.tableRow}>
+                  <Text style={[styles.tableCell, { flex: 2, fontFamily: 'Courier-Bold' }]}>
+                    {t.symbol}
+                  </Text>
+                  <Text style={[styles.tableCell, { flex: 3, color: COLORS.textMuted, fontSize: 8 }]}>
+                    {t.name ?? '—'}
+                  </Text>
+                  <Text style={[styles.tableCell, { flex: 2, textAlign: 'right' }]}>
+                    {fmtToken(t.balance)}
+                  </Text>
+                  <Text style={[styles.tableCell, { flex: 2, textAlign: 'right' }]}>
+                    {t.usdValue !== null ? fmtUsd(t.usdValue) : '—'}
+                  </Text>
+                </View>
+              ))}
+              {nonSpam.length > 12 && (
+                <View style={styles.tableRow}>
+                  <Text style={[styles.tableCell, { color: COLORS.textSubtle, fontStyle: 'italic' }]}>
+                    + {nonSpam.length - 12} more
+                  </Text>
+                </View>
+              )}
+              {spam.length > 0 && (
+                <View style={[styles.tableRow, { backgroundColor: 'rgba(239,68,68,0.05)' }]}>
+                  <Text style={[styles.tableCell, { color: COLORS.risky, fontFamily: 'Helvetica-Bold' }]}>
+                    {spam.length} spam token{spam.length === 1 ? '' : 's'} suppressed
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+        );
+      })}
+
+      <PageFooter />
+    </Page>
+  );
+}
+
+// =========================================================================
+// AI narrative page
+// =========================================================================
+
+function NarrativePage({ data, pageNum }: { data: ReportData; pageNum: number }) {
+  if (!data.narrative) return null;
+  const n = data.narrative;
+
+  // Split on double newlines into paragraphs to preserve structure.
+  const paragraphs = n.text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+
+  return (
+    <Page size="A4" style={styles.page}>
+      <PageHeader pageNum={pageNum} />
+      <Text style={styles.sectionTitle}>AI Risk Narrative</Text>
+      <Text style={styles.sectionSubtitle}>
+        Multi-section assessment generated by the Sentinel agent (Claude) using live tool calls
+      </Text>
+
+      <View style={styles.card}>
+        {paragraphs.map((p, i) => {
+          // Headings appear as **bold** lines or "## " prefixes. Render the
+          // markdown bullets and bolds at a basic level — keep prose-first.
+          const isHeading = /^\*\*.+\*\*$/.test(p) || /^#+\s/.test(p);
+          const cleaned = p.replace(/^#+\s*/, '').replace(/\*\*/g, '');
+          return (
+            <Text
+              key={i}
+              style={
+                isHeading
+                  ? {
+                      fontSize: 10,
+                      fontFamily: 'Helvetica-Bold',
+                      color: COLORS.accent,
+                      marginTop: i === 0 ? 0 : 8,
+                      marginBottom: 4,
+                      textTransform: 'uppercase',
+                      letterSpacing: 1,
+                    }
+                  : {
+                      fontSize: 9,
+                      color: COLORS.text,
+                      lineHeight: 1.5,
+                      marginBottom: 6,
+                    }
+              }
+            >
+              {cleaned}
+            </Text>
+          );
+        })}
+      </View>
 
       <PageFooter />
     </Page>
@@ -840,11 +1268,65 @@ function MetricCard({
   );
 }
 
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <View style={styles.legendDot}>
+      <View
+        style={{
+          width: 7,
+          height: 7,
+          borderRadius: 3.5,
+          backgroundColor: color,
+          marginRight: 4,
+        }}
+      />
+      <Text style={{ fontSize: 7, color: COLORS.textMuted }}>{label}</Text>
+    </View>
+  );
+}
+
 // =========================================================================
 // The full document
 // =========================================================================
 
 export function ReportPDF({ data }: { data: ReportData }) {
+  // Track running page number so each section gets the right number even
+  // when earlier sections are null.
+  let pageNum = 1; // cover is always page 1
+
+  const pages: React.ReactNode[] = [
+    <CoverPage key="cover" data={data} />,
+  ];
+
+  if (data.aave) {
+    pageNum++;
+    pages.push(<AavePage key="aave" data={data} pageNum={pageNum} />);
+  }
+  if (data.monteCarlo) {
+    pageNum++;
+    pages.push(<MonteCarloDistributionPage key="mc1" data={data} pageNum={pageNum} />);
+    pageNum++;
+    pages.push(<MonteCarloAnalysisPage key="mc2" data={data} pageNum={pageNum} />);
+  }
+  if (data.composition) {
+    pageNum++;
+    pages.push(<CompositionPage key="comp" data={data} pageNum={pageNum} />);
+    pageNum++;
+    pages.push(<TopHoldingsPage key="top" data={data} pageNum={pageNum} />);
+  }
+  if (data.correlation) {
+    pageNum++;
+    pages.push(<CorrelationPage key="corr" data={data} pageNum={pageNum} />);
+  }
+  if (data.wallet) {
+    pageNum++;
+    pages.push(<WalletPage key="wallet" data={data} pageNum={pageNum} />);
+  }
+  if (data.narrative) {
+    pageNum++;
+    pages.push(<NarrativePage key="narr" data={data} pageNum={pageNum} />);
+  }
+
   return (
     <Document
       title={`USDC Guardian Report — ${shortAddr(data.meta.walletAddress)}`}
@@ -853,11 +1335,7 @@ export function ReportPDF({ data }: { data: ReportData }) {
       creator="usdc-guardian"
       producer="usdc-guardian"
     >
-      <CoverPage data={data} />
-      {data.aave && <AavePage data={data} />}
-      {data.monteCarlo && <MonteCarloPage data={data} />}
-      {data.composition && <CompositionPage data={data} />}
-      {data.correlation && <CorrelationPage data={data} />}
+      {pages}
     </Document>
   );
 }

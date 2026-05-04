@@ -32,7 +32,9 @@ import type {
 import {
   assembleCompositionSection,
   assembleCorrelationSection,
+  assembleNarrativeSection,
   assembleReport,
+  assembleWalletSection,
 } from '@/lib/report/assemble';
 import { ReportPDF } from './ReportPDF';
 
@@ -123,6 +125,11 @@ interface Props {
   payment: { txHash?: string; network?: string } | null;
   /** Aave positions — used for correlation asset discovery. */
   positions: Portfolio['positions'];
+  /**
+   * Optional AI narrative text from the AI tab. When present, the PDF
+   * appends a final page with the structured prose.
+   */
+  aiNarrative?: string | null;
 }
 
 export function DownloadReportButton({
@@ -131,6 +138,7 @@ export function DownloadReportButton({
   monteCarlo,
   payment,
   positions,
+  aiNarrative,
 }: Props) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -152,8 +160,10 @@ export function DownloadReportButton({
       }
 
       // Composition mirrors what the live panel renders (X-ray on by default
-      // — same convention as the panel).
+      // — same convention as the panel). Wallet section reuses the same
+      // wire response so we don't double-fetch.
       const composition = assembleCompositionSection(holdings, true);
+      const wallet = assembleWalletSection(holdings);
 
       // 2. Asset discovery for correlation: Aave positions + non-spam,
       //    priced wallet ERC-20s sorted by USD value + market context.
@@ -230,6 +240,8 @@ export function DownloadReportButton({
         monteCarlo,
         composition,
         correlation,
+        wallet,
+        narrative: assembleNarrativeSection(aiNarrative ?? null),
       });
 
       // 5. Generate the PDF blob and trigger download.

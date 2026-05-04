@@ -10,6 +10,7 @@
  */
 
 import {
+  applyPriceShock,
   baseToUsd,
   ltToFraction,
   liquidationPriceForAsset,
@@ -26,8 +27,14 @@ import type {
   ReportCompositionSection,
   ReportCorrelationSection,
   ReportData,
+  ReportFrontierPoint,
   ReportMeta,
   ReportMonteCarloSection,
+  ReportNarrativeSection,
+  ReportSamplePath,
+  ReportShockResult,
+  ReportWalletChain,
+  ReportWalletSection,
 } from './types';
 
 // =========================================================================
@@ -38,6 +45,10 @@ import type {
  * Convert a `usePortfolio()` snapshot into the report's Aave section.
  * Returns null when the wallet has no live position (collateral and debt
  * both zero) — the PDF will skip the page.
+ *
+ * Includes a 3-scenario shock waterfall (-10/-30/-50% on all non-stable
+ * assets) so the PDF can render the same stress-test bars the live UI
+ * shows in the Risk Profile tab.
  */
 export function assembleAaveSection(
   portfolio: Portfolio,
@@ -49,6 +60,22 @@ export function assembleAaveSection(
   }
 
   const totalDebtBase = account.totalDebtBase;
+
+  // Three standard market-wide shocks. Mirror the simulate_price_shock tool
+  // and the live UI's "stress waterfall".
+  const shocks: ReportShockResult[] = [-10, -30, -50].map((pctChange) => {
+    const out = applyPriceShock(positions, {
+      assetSymbol: 'ALL_NON_STABLE',
+      pctChange,
+    });
+    return {
+      pctChange,
+      hf: wadToFloat(out.shockedHealthFactor),
+      collateralUsd: baseToUsd(out.shockedCollateralBase),
+      debtUsd: baseToUsd(out.shockedDebtBase),
+      liquidatable: out.liquidatable,
+    };
+  });
 
   return {
     chainName,
@@ -70,6 +97,7 @@ export function assembleAaveSection(
         liquidationPriceUsd: liqPriceBase === null ? null : baseToUsd(liqPriceBase),
       };
     }),
+    shocks,
   };
 }
 
@@ -80,6 +108,18 @@ export function assembleAaveSection(
 // Wire shape from /api/agent/monte-carlo (mirror of MonteCarloResponse in
 // MonteCarloPanel — duplicated narrowly to keep this file independent).
 type MaybeInf = number | 'INFINITY';
+
+interface MonteCarloFrontierPointWire {
+  leverageScale: number;
+  scaledDebtUsd: number;
+  annualizedReturn: number;
+  annualizedVolatility: number;
+  sharpeRatio: number;
+  pLiquidation: number;
+  expectedTerminalHf: MaybeInf;
+  initialHf: MaybeInf;
+  isCurrent: boolean;
+}
 
 interface MonteCarloWire {
   simulation: {
@@ -93,12 +133,25 @@ interface MonteCarloWire {
       p95: MaybeInf;
     };
     expectedTerminalHf: MaybeInf;
+    histogram: { bins: number[]; counts: number[] };
+    samplePaths: Array<{
+      pathId: number;
+      daily: Array<{ day: number; hf: number }>;
+      terminalHf: number;
+      liquidated: boolean;
+    }>;
     riskAdjusted: {
       sharpeRatio: number;
       annualizedReturnMean: number;
       annualizedReturnVolatility: number;
       riskFreeRateAnnual: number;
     };
+  };
+  efficientFrontier: {
+    points: MonteCarloFrontierPointWire[];
+    riskFreeRateAnnual: number;
+    currentIndex: number;
+    optimalIndex: number;
   };
   meta: { currentHealthFactor: number };
 }
@@ -110,7 +163,9 @@ function unwrap(v: MaybeInf): number {
 /**
  * Convert the wire response from /api/agent/monte-carlo into the
  * report section. Re-runs the same plain-English `interpret()` used in
- * the live panel so the PDF text matches what the user just saw.
+ * the live panel so the PDF text matches what the user just saw, and
+ * carries through the histogram, sample paths, and frontier points so
+ * the PDF can render the same charts.
  */
 export function assembleMonteCarloSection(
   wire: MonteCarloWire
@@ -124,6 +179,49 @@ export function assembleMonteCarloSection(
     sim.config.horizonDays,
     wire.meta.currentHealthFactor
   );
+
+  // Compact sample paths into pure number arrays — much smaller than the
+  // wire shape, sufficient for the PDF sparkline.
+  const samplePaths: ReportSamplePath[] = sim.samplePaths.map((p) => {
+    // Dense day-indexed array. Cap HF at 5 so a single very-healthy path
+    // doesn't squash the visual scale.
+    const daily: number[] = new Array(sim.config.horizonDays + 1);
+    for (const point of p.daily) {
+      daily[point.day] = Number.isFinite(point.hf) ? Math.min(point.hf, 5) : 5;
+    }
+    // Forward-fill any holes so the line is continuous.
+    let last = daily[0] ?? 0;
+    for (let i = 0; i <= sim.config.horizonDays; i++) {
+      if (typeof daily[i] === 'number') last = daily[i];
+      else daily[i] = last;
+    }
+    return { daily, liquidated: p.liquidated };
+  });
+
+  // Efficient frontier points + verdict. Same logic as the live panel.
+  const points: ReportFrontierPoint[] = wire.efficientFrontier.points.map((p, i) => {
+    const initialHf = unwrap(p.initialHf);
+    const feasible = p.pLiquidation < 0.05 && Number.isFinite(initialHf) && initialHf > 1.0;
+    return {
+      leverageScale: p.leverageScale,
+      annualizedReturn: p.annualizedReturn,
+      annualizedVolatility: p.annualizedVolatility,
+      sharpeRatio: p.sharpeRatio,
+      pLiquidation: p.pLiquidation,
+      initialHf,
+      isCurrent: p.isCurrent,
+      isOptimal: i === wire.efficientFrontier.optimalIndex,
+      feasible,
+    };
+  });
+  const current = points[wire.efficientFrontier.currentIndex];
+  const optimal = points[wire.efficientFrontier.optimalIndex];
+  const sameLeverage = wire.efficientFrontier.currentIndex === wire.efficientFrontier.optimalIndex;
+  const verdict = sameLeverage
+    ? 'Your current leverage is already on the efficient frontier — well-tuned for risk-adjusted return.'
+    : optimal && current
+      ? `Switching to ${optimal.leverageScale.toFixed(2)}× of your current debt would improve Sharpe from ${current.sharpeRatio.toFixed(2)} to ${optimal.sharpeRatio.toFixed(2)}, while keeping P(liq) ${optimal.pLiquidation < 0.01 ? 'below 1%' : `at ${(optimal.pLiquidation * 100).toFixed(1)}%`}.`
+      : 'Frontier sweep complete.';
 
   return {
     paths: sim.config.paths,
@@ -145,6 +243,9 @@ export function assembleMonteCarloSection(
       riskFreeRateAnnual: sim.riskAdjusted.riskFreeRateAnnual,
     },
     interpretation: interp,
+    histogram: sim.histogram,
+    samplePaths,
+    efficientFrontier: { points, verdict },
   };
 }
 
@@ -179,7 +280,7 @@ function interpret(
       details: [
         `Probability of liquidation in the next ${horizon} days: ${pctFmt(pLiq)} — under half a percent.`,
         `Even in the worst 5% of simulated futures, your HF stays at ${fmtHf(p5)}. ${dropLine}`,
-        `Median outcome: HF lands near ${fmtHf(p50)}. Top 5% of paths: HF ≥ ${fmtHf(p95)}.`,
+        `Median outcome: HF lands near ${fmtHf(p50)}. Top 5% of paths: HF >= ${fmtHf(p95)}.`,
       ],
       recommendation:
         'No defensive action needed. You have headroom for additional borrowing if you want — your safety buffer is generous.',
@@ -192,7 +293,7 @@ function interpret(
       details: [
         `Probability of liquidation: ${pctFmt(pLiq)} — about 1 in ${Math.round(1 / pLiq)} simulated paths.`,
         `Worst 5% of scenarios bring HF to ${fmtHf(p5)}. ${dropLine}`,
-        `Median outcome: HF ${fmtHf(p50)}. Best 5%: HF ≥ ${fmtHf(p95)}.`,
+        `Median outcome: HF ${fmtHf(p50)}. Best 5%: HF >= ${fmtHf(p95)}.`,
       ],
       recommendation:
         "You're in a comfortable zone. Consider keeping at least your current collateral buffer — you have room to ride through normal market volatility without action.",
@@ -238,22 +339,40 @@ function interpret(
 }
 
 // =========================================================================
-// Composition section — wraps wallet-holdings → analyzeComposition()
+// Composition + Wallet sections — both fed by /api/wallet-holdings
 // =========================================================================
 
+interface WalletErc20Wire {
+  contract: string;
+  symbol: string;
+  name: string | null;
+  balanceFormatted?: number;
+  priceUsd: number | null;
+  usdValue: number | null;
+  isSpam: boolean;
+}
+
+interface WalletChainWire {
+  chainSlug: string;
+  chainName: string;
+  nativeBalance: {
+    symbol: string;
+    balanceFormatted: number;
+    usdValue: number | null;
+  };
+  erc20: WalletErc20Wire[];
+  legitimateUsd: number;
+  spamUsd: number;
+  totalUsd?: number;
+  error?: string;
+}
+
 interface WalletHoldingsWire {
-  chains: Array<{
-    nativeBalance: {
-      symbol: string;
-      balanceFormatted: number;
-      usdValue: number | null;
-    };
-    erc20: Array<{
-      symbol: string;
-      usdValue: number | null;
-      isSpam: boolean;
-    }>;
-  }>;
+  chains: WalletChainWire[];
+  legitimateUsd: number;
+  spamUsd: number;
+  totalUsd: number;
+  error?: string;
 }
 
 /**
@@ -287,6 +406,59 @@ export function assembleCompositionSection(
   const composition: CompositionAnalysis = analyzeComposition(holdings, { xray });
   if (composition.totalUsd === 0) return null;
   return { composition, xrayApplied: xray };
+}
+
+/**
+ * Build the per-chain Wallet Holdings section from a wallet-holdings wire
+ * response. Reproduces the WalletHoldingsPanel data: native balance + ERC-20
+ * list per chain, with spam flagged. Returns null if every chain errored
+ * or the wallet is empty.
+ */
+export function assembleWalletSection(
+  wire: WalletHoldingsWire
+): ReportWalletSection | null {
+  const chains: ReportWalletChain[] = wire.chains.map((c) => {
+    const chainTotal =
+      typeof c.totalUsd === 'number'
+        ? c.totalUsd
+        : c.legitimateUsd + c.spamUsd;
+    const erc20Sorted = [...c.erc20].sort((a, b) => {
+      const av = a.usdValue ?? 0;
+      const bv = b.usdValue ?? 0;
+      return bv - av;
+    });
+    return {
+      chainSlug: c.chainSlug,
+      chainName: c.chainName,
+      totalUsd: chainTotal,
+      legitimateUsd: c.legitimateUsd,
+      spamUsd: c.spamUsd,
+      native: {
+        symbol: c.nativeBalance.symbol,
+        balance: c.nativeBalance.balanceFormatted,
+        usdValue: c.nativeBalance.usdValue,
+      },
+      erc20: erc20Sorted.map((t) => ({
+        symbol: t.symbol,
+        name: t.name,
+        balance: typeof t.balanceFormatted === 'number' ? t.balanceFormatted : null,
+        usdValue: t.usdValue,
+        isSpam: t.isSpam,
+      })),
+      error: c.error,
+    };
+  });
+  // Drop chains that errored AND have no useful data.
+  const useful = chains.filter(
+    (c) => !c.error || c.totalUsd > 0 || c.erc20.length > 0
+  );
+  if (useful.length === 0) return null;
+  return {
+    chains: useful,
+    legitimateUsd: wire.legitimateUsd,
+    spamUsd: wire.spamUsd,
+    totalUsd: wire.totalUsd,
+  };
 }
 
 // =========================================================================
@@ -394,12 +566,25 @@ export function assembleCorrelationSection(
 }
 
 // =========================================================================
+// Narrative section — wraps an already-fetched AI prose string
+// =========================================================================
+
+export function assembleNarrativeSection(
+  text: string | null
+): ReportNarrativeSection | null {
+  if (!text) return null;
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  return { text: trimmed };
+}
+
+// =========================================================================
 // Top-level assembler
 // =========================================================================
 
 /**
- * Bundle all four sections into a `ReportData`. Any input may be null,
- * in which case the corresponding section is null and the PDF skips it.
+ * Bundle every section into a `ReportData`. Any input may be null, in
+ * which case the corresponding section is null and the PDF skips it.
  */
 export function assembleReport(args: {
   meta: ReportMeta;
@@ -407,6 +592,8 @@ export function assembleReport(args: {
   monteCarlo: ReportMonteCarloSection | null;
   composition: ReportCompositionSection | null;
   correlation: ReportCorrelationSection | null;
+  wallet: ReportWalletSection | null;
+  narrative: ReportNarrativeSection | null;
 }): ReportData {
   return {
     meta: args.meta,
@@ -414,5 +601,7 @@ export function assembleReport(args: {
     monteCarlo: args.monteCarlo,
     composition: args.composition,
     correlation: args.correlation,
+    wallet: args.wallet,
+    narrative: args.narrative,
   };
 }

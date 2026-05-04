@@ -329,6 +329,7 @@ export function PremiumAnalysisButton() {
                               )}
                               payment={monteCarloResult.payment}
                               positions={portfolio.positions}
+                              aiNarrative={analysis}
                             />
                           )}
                         </>
