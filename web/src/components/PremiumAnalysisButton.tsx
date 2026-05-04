@@ -29,14 +29,19 @@ import { useAccount } from 'wagmi';
 
 import { usePortfolio } from '@/lib/aave/usePortfolio';
 import {
+  assembleAaveSection,
+  assembleMonteCarloSection,
+} from '@/lib/report/assemble';
+import {
   SentinelAnalysisVisuals,
   WalletHoldingsPanel,
 } from './SentinelAnalysisVisuals';
-import { MonteCarloPanel } from './MonteCarloPanel';
+import { MonteCarloPanel, type MonteCarloResponse } from './MonteCarloPanel';
 import { AssetMomentumPanel } from './AssetMomentumPanel';
 import { PortfolioCompositionPanel } from './PortfolioCompositionPanel';
 import { AssetCorrelationPanel } from './AssetCorrelationPanel';
 import { EtherfiInsightsPanel } from './EtherfiInsightsPanel';
+import { DownloadReportButton } from './DownloadReportButton';
 
 interface AssistantBlock {
   type: 'text' | 'tool_use';
@@ -107,6 +112,12 @@ export function PremiumAnalysisButton() {
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>('risk');
+  // Lifted Monte Carlo result so the DownloadReportButton can package the
+  // same numbers the user just saw into the PDF deliverable.
+  const [monteCarloResult, setMonteCarloResult] = useState<{
+    data: MonteCarloResponse;
+    payment: { txHash?: string; network?: string } | null;
+  } | null>(null);
 
   // Pull the live portfolio whenever the modal is open. The hook honors the
   // currently-connected chain (post-Phase-A sub-task 6), so visuals reflect
@@ -288,10 +299,17 @@ export function PremiumAnalysisButton() {
                       Monte Carlo (with Sharpe + efficient frontier inline),
                       Portfolio Composition (sector/market-cap/concentration —
                       DeFi mirror of TradFi wealth-manager reports),
-                      Asset Correlation matrix. */}
+                      Asset Correlation matrix.
+
+                      The DownloadReportButton appears at the bottom once the
+                      Monte Carlo run has completed — that's the "deliverable"
+                      the user paid for. */}
                   {activeTab === 'premium' && (
                     <>
-                      <MonteCarloPanel hasPosition={visualsReady} />
+                      <MonteCarloPanel
+                        hasPosition={visualsReady}
+                        onResult={setMonteCarloResult}
+                      />
                       {address && (
                         <>
                           <PortfolioCompositionPanel walletAddress={address} />
@@ -299,6 +317,20 @@ export function PremiumAnalysisButton() {
                             positions={portfolio.positions}
                             walletAddress={address}
                           />
+                          {monteCarloResult && (
+                            <DownloadReportButton
+                              walletAddress={address}
+                              aave={assembleAaveSection(
+                                portfolio,
+                                portfolio.chainName
+                              )}
+                              monteCarlo={assembleMonteCarloSection(
+                                monteCarloResult.data
+                              )}
+                              payment={monteCarloResult.payment}
+                              positions={portfolio.positions}
+                            />
+                          )}
                         </>
                       )}
                     </>

@@ -61,7 +61,7 @@ interface FrontierPoint {
   isCurrent: boolean;
 }
 
-interface MonteCarloResponse {
+export interface MonteCarloResponse {
   address: string;
   simulation: {
     config: {
@@ -136,9 +136,20 @@ function fmtHf(n: number): string {
 
 interface Props {
   hasPosition: boolean;
+  /**
+   * Fires every time a Monte Carlo run completes. Used by the parent to
+   * lift the result up so the DownloadReportButton can package it into the
+   * PDF deliverable. Null is passed when the user resets / re-runs.
+   */
+  onResult?: (
+    result: {
+      data: MonteCarloResponse;
+      payment: { txHash?: string; network?: string } | null;
+    } | null
+  ) => void;
 }
 
-export function MonteCarloPanel({ hasPosition }: Props) {
+export function MonteCarloPanel({ hasPosition, onResult }: Props) {
   const { address, isConnected } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
 
@@ -159,6 +170,7 @@ export function MonteCarloPanel({ hasPosition }: Props) {
     setError(null);
     setData(null);
     setPaymentInfo(null);
+    onResult?.(null);
 
     try {
       const result = await paidFetchBrowser(
@@ -195,12 +207,14 @@ export function MonteCarloPanel({ hasPosition }: Props) {
 
       const json = (await result.response.json()) as MonteCarloResponse;
       setData(json);
-      if (result.payment.paymentResponse?.txHash) {
-        setPaymentInfo({
-          txHash: result.payment.paymentResponse.txHash,
-          network: result.payment.paymentResponse.network,
-        });
-      }
+      const payment = result.payment.paymentResponse?.txHash
+        ? {
+            txHash: result.payment.paymentResponse.txHash,
+            network: result.payment.paymentResponse.network,
+          }
+        : null;
+      if (payment) setPaymentInfo(payment);
+      onResult?.({ data: json, payment });
     } catch (err) {
       const msg = (err as Error).message || 'Simulation failed';
       // wagmi rejection messages are verbose; surface the friendly bit
