@@ -34,6 +34,8 @@ import {
 } from './SentinelAnalysisVisuals';
 import { MonteCarloPanel } from './MonteCarloPanel';
 import { AssetMomentumPanel } from './AssetMomentumPanel';
+import { PortfolioCompositionPanel } from './PortfolioCompositionPanel';
+import { AssetCorrelationPanel } from './AssetCorrelationPanel';
 
 interface AssistantBlock {
   type: 'text' | 'tool_use';
@@ -277,9 +279,24 @@ export function PremiumAnalysisButton() {
                     />
                   )}
 
-                  {/* PREMIUM TAB — Monte Carlo + Sharpe + frontier, paid x402. */}
+                  {/* PREMIUM TAB — paid x402 unlocks the full suite:
+                      Monte Carlo (with Sharpe + efficient frontier inline),
+                      Portfolio Composition (sector/market-cap/concentration —
+                      DeFi mirror of TradFi wealth-manager reports),
+                      Asset Correlation matrix. */}
                   {activeTab === 'premium' && (
-                    <MonteCarloPanel hasPosition={visualsReady} />
+                    <>
+                      <MonteCarloPanel hasPosition={visualsReady} />
+                      {address && (
+                        <>
+                          <PortfolioCompositionPanel walletAddress={address} />
+                          <AssetCorrelationPanel
+                            positions={portfolio.positions}
+                            walletAddress={address}
+                          />
+                        </>
+                      )}
+                    </>
                   )}
 
                   {/* AI NARRATIVE TAB */}
