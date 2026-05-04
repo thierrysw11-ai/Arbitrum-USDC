@@ -1,0 +1,35 @@
+{
+  "_comment": "The Graph CLI 0.87+ multi-chain config. When you run `graph build --network <name>` (or `graph deploy ... --network <name>`), the CLI substitutes the values below into subgraph.yaml's source.address + source.startBlock fields, and rewrites the network field. One subgraph source, four chain deployments.",
+  "_startBlockNotes": "Each startBlock should be ~1 week behind that chain's current head — close enough that the indexer reaches head in minutes, far enough that the 7D volume chart has data immediately. Use the chain's explorer to find the current block, subtract the rough 7-day count, and update.",
+
+  "arbitrum-one": {
+    "USDC": {
+      "address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+      "startBlock": 454200000
+    }
+  },
+  "base": {
+    "USDC": {
+      "_comment": "Native (Circle) USDC on Base — NOT 0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA, which is USDbC (deprecated bridged variant).",
+      "_startBlockTodo": "Update before deploying. Base produces a block every ~2s. Get current head from https://basescan.org/, subtract ~300,000 for ~7 days of history.",
+      "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "startBlock": 25000000
+    }
+  },
+  "optimism": {
+    "USDC": {
+      "_comment": "Native (Circle) USDC on OP — NOT 0x7F5c764cBc14f9669B88837ca1490cCa17c31607, which is the bridged USDC.e.",
+      "_startBlockTodo": "Update before deploying. OP produces a block every ~2s. Get current head from https://optimistic.etherscan.io/, subtract ~300,000.",
+      "address": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+      "startBlock": 132000000
+    }
+  },
+  "polygon": {
+    "USDC": {
+      "_comment": "Native (Circle) USDC on Polygon — NOT 0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174, which is the bridged USDC.e (being deprecated).",
+      "_startBlockTodo": "Update before deploying. Polygon produces a block every ~2.2s. Get current head from https://polygonscan.com/, subtract ~275,000.",
+      "address": "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359",
+      "startBlock": 65000000
+    }
+  }
+}

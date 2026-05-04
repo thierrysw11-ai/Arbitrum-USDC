@@ -2,9 +2,12 @@
 
 import { useMemo } from "react";
 import { useAccount, useReadContract, useReadContracts } from "wagmi";
-import { arbitrum } from "wagmi/chains";
 
-import { AAVE_V3_ARBITRUM } from "./addresses";
+import {
+  DEFAULT_CHAIN,
+  getChain,
+  isSupportedChainId,
+} from "@/lib/chains";
 import {
   AAVE_ORACLE_ABI,
   POOL_ABI,
@@ -13,17 +16,24 @@ import {
 import type { Portfolio, PositionRow, UserAccountData } from "./types";
 
 /**
- * Reads an Aave V3 position on Arbitrum One.
+ * Reads an Aave V3 position on whichever chain is currently active.
  *
- * If `viewAddress` is supplied, reads that address regardless of whether
- * a wallet is connected — this is the "spectator" mode that powers the
- * "View any address" input on the Portfolio page (and is also the exact
- * shape Phase 2's agent will call into when reasoning about a wallet).
+ * Chain resolution (Phase A multi-chain edition):
+ *   1. If `viewChainId` is supplied, use it (explicit override).
+ *   2. Else use the wallet's connected chainId from `useAccount()`.
+ *   3. Else fall back to `DEFAULT_CHAIN` (Arbitrum One).
+ *   4. If the resolved chain is not in the supported registry,
+ *      collapse to `DEFAULT_CHAIN` so we don't try to call Arbitrum's
+ *      Aave Pool address on, say, Ethereum mainnet (would just revert).
  *
- * If `viewAddress` is omitted, falls back to the connected wallet from
- * `useAccount()`.
+ * Address resolution:
+ *   - If `viewAddress` is supplied, read that address (spectator mode).
+ *   - Else use the connected wallet from `useAccount()`.
  *
- * High level:
+ * Returns the same `Portfolio` snapshot shape as before, plus the chain
+ * info so callers can render which chain's data they're seeing.
+ *
+ * High level (per-chain):
  *   1. Fetch the canonical reserve list from `ProtocolDataProvider.getAllReservesTokens()`.
  *   2. Multicall, for every reserve:
  *        - `getUserReserveData(asset, user)` → balances + collateral toggle
@@ -32,34 +42,57 @@ import type { Portfolio, PositionRow, UserAccountData } from "./types";
  *        - `Pool.getReserveData(asset)` → live ray-scaled APRs
  *   3. Filter out reserves where the user has zero collateral and zero debt.
  *   4. Read `Pool.getUserAccountData(user)` for the protocol-computed aggregate.
- *
- * Returns a `Portfolio` snapshot. Loading states bubble up; transient
- * read failures (a single reserve's price feed reverting, say) are
- * tolerated by skipping the affected row rather than failing the whole
- * call.
  */
 export function usePortfolio(
-  viewAddress?: `0x${string}`
-): Portfolio & { address?: `0x${string}`; isOverride: boolean } {
-  const { address: connectedAddress } = useAccount();
+  viewAddress?: `0x${string}`,
+  viewChainId?: number
+): Portfolio & {
+  address?: `0x${string}`;
+  isOverride: boolean;
+  chainId: number;
+  chainName: string;
+  isUnsupportedChain: boolean;
+} {
+  const { address: connectedAddress, chainId: connectedChainId } = useAccount();
+
   // The address we actually read against. Override takes precedence so a
   // user can inspect any wallet without connecting.
   const address = viewAddress ?? connectedAddress;
   const isOverride = !!viewAddress && viewAddress !== connectedAddress;
 
+  // Resolve the target chain. Explicit override > connected wallet > default.
+  // If the result isn't in our registry (e.g. user is on Ethereum mainnet),
+  // surface that to the caller so the UI can render an empty-state, but
+  // collapse to DEFAULT_CHAIN internally so we don't crash on undefined.
+  const requestedChainId =
+    viewChainId ?? connectedChainId ?? DEFAULT_CHAIN.chainId;
+  const isUnsupportedChain =
+    requestedChainId !== undefined && !isSupportedChainId(requestedChainId);
+  const chain = isUnsupportedChain
+    ? DEFAULT_CHAIN
+    : getChain(requestedChainId) ?? DEFAULT_CHAIN;
+
+  // Pre-cast Aave V3 addresses for this chain. Done once per render so the
+  // contract args below can be plain object literals.
+  const poolAddress = chain.aaveV3.pool as `0x${string}`;
+  const dataProviderAddress = chain.aaveV3.dataProvider as `0x${string}`;
+  const oracleAddress = chain.aaveV3.oracle as `0x${string}`;
+
+  // Reads are gated on `address && !isUnsupportedChain` so we never issue
+  // an Arbitrum-Pool call against, say, Ethereum's RPC.
+  const readsEnabled = !!address && !isUnsupportedChain;
+
   // -------------------------------------------------------------------------
   // 1. Aggregate position (single read against the Pool)
   // -------------------------------------------------------------------------
   const accountQuery = useReadContract({
-    chainId: arbitrum.id,
-    address: AAVE_V3_ARBITRUM.Pool as `0x${string}`,
+    chainId: chain.chainId,
+    address: poolAddress,
     abi: POOL_ABI,
     functionName: "getUserAccountData",
     args: address ? [address] : undefined,
     query: {
-      enabled: !!address,
-      // Aave's aggregate ticks every block; 30 s staleTime is plenty for
-      // a "what's my position" panel and saves a lot of RPC traffic.
+      enabled: readsEnabled,
       staleTime: 30_000,
     },
   });
@@ -68,13 +101,12 @@ export function usePortfolio(
   // 2. Canonical reserve list (rare to change, cache aggressively)
   // -------------------------------------------------------------------------
   const reservesQuery = useReadContract({
-    chainId: arbitrum.id,
-    address: AAVE_V3_ARBITRUM.AaveProtocolDataProvider as `0x${string}`,
+    chainId: chain.chainId,
+    address: dataProviderAddress,
     abi: PROTOCOL_DATA_PROVIDER_ABI,
     functionName: "getAllReservesTokens",
     query: {
-      enabled: !!address,
-      // New reserves get listed maybe a few times a year — cache for an hour.
+      enabled: readsEnabled,
       staleTime: 60 * 60_000,
     },
   });
@@ -88,38 +120,46 @@ export function usePortfolio(
   // 3. Per-reserve multicall — 4 reads per asset, batched
   // -------------------------------------------------------------------------
   const perReserveContracts = useMemo(() => {
-    if (!address || reserveList.length === 0) return [];
+    if (!readsEnabled || !address || reserveList.length === 0) return [];
     return reserveList.flatMap((r) => [
       {
-        chainId: arbitrum.id,
-        address: AAVE_V3_ARBITRUM.AaveProtocolDataProvider as `0x${string}`,
+        chainId: chain.chainId,
+        address: dataProviderAddress,
         abi: PROTOCOL_DATA_PROVIDER_ABI,
         functionName: "getUserReserveData",
         args: [r.tokenAddress, address],
       },
       {
-        chainId: arbitrum.id,
-        address: AAVE_V3_ARBITRUM.AaveProtocolDataProvider as `0x${string}`,
+        chainId: chain.chainId,
+        address: dataProviderAddress,
         abi: PROTOCOL_DATA_PROVIDER_ABI,
         functionName: "getReserveConfigurationData",
         args: [r.tokenAddress],
       },
       {
-        chainId: arbitrum.id,
-        address: AAVE_V3_ARBITRUM.AaveOracle as `0x${string}`,
+        chainId: chain.chainId,
+        address: oracleAddress,
         abi: AAVE_ORACLE_ABI,
         functionName: "getAssetPrice",
         args: [r.tokenAddress],
       },
       {
-        chainId: arbitrum.id,
-        address: AAVE_V3_ARBITRUM.Pool as `0x${string}`,
+        chainId: chain.chainId,
+        address: poolAddress,
         abi: POOL_ABI,
         functionName: "getReserveData",
         args: [r.tokenAddress],
       },
     ]);
-  }, [address, reserveList]);
+  }, [
+    readsEnabled,
+    address,
+    reserveList,
+    chain.chainId,
+    dataProviderAddress,
+    oracleAddress,
+    poolAddress,
+  ]);
 
   const perReserveQuery = useReadContracts({
     contracts: perReserveContracts,
@@ -153,10 +193,6 @@ export function usePortfolio(
         continue;
       }
 
-      // getUserReserveData returns 9 fields as a tuple. Wagmi/viem types
-      // these as a wide union (any of the contracts in our multicall could
-      // be returning); we know which call this index is from at runtime, so
-      // cast through unknown to satisfy stricter Vercel tsc.
       const userArr = userRes.result as unknown as readonly [
         bigint, // currentATokenBalance
         bigint, // currentStableDebt
@@ -193,8 +229,6 @@ export function usePortfolio(
 
       const priceBase = priceRes.result as unknown as bigint;
 
-      // Pool.getReserveData returns a struct — viem decodes the tuple into
-      // an object keyed by the named fields when the ABI declares them.
       const reserveData = reserveDataRes.result as unknown as {
         currentLiquidityRate: bigint;
         currentVariableBorrowRate: bigint;
@@ -249,6 +283,9 @@ export function usePortfolio(
   return {
     address,
     isOverride,
+    chainId: chain.chainId,
+    chainName: chain.displayName,
+    isUnsupportedChain,
     account,
     positions,
     loading:

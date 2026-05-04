@@ -1,13 +1,25 @@
 {
   "name": "arbitrum-usdc-subgraph",
   "version": "0.7.0",
-  "description": "Subgraph indexing USDC Transfer events on Arbitrum One — hourly volume + whale-flagging with structured logs",
+  "description": "Subgraph indexing USDC Transfer events on Arbitrum One — hourly volume + whale-flagging with structured logs. Multi-chain ready via networks.json.",
   "private": true,
   "scripts": {
     "codegen": "graph codegen",
     "build": "graph build",
+
+    "build:arbitrum": "graph build --network arbitrum-one",
+    "build:base": "graph build --network base",
+    "build:optimism": "graph build --network optimism",
+    "build:polygon": "graph build --network polygon",
+
     "auth": "graph auth",
+
     "deploy": "graph deploy arbitrum-usdc --node https://api.studio.thegraph.com/deploy/",
+    "deploy:arbitrum": "graph deploy arbitrum-usdc --network arbitrum-one --node https://api.studio.thegraph.com/deploy/",
+    "deploy:base": "graph deploy base-usdc --network base --node https://api.studio.thegraph.com/deploy/",
+    "deploy:optimism": "graph deploy optimism-usdc --network optimism --node https://api.studio.thegraph.com/deploy/",
+    "deploy:polygon": "graph deploy polygon-usdc --network polygon --node https://api.studio.thegraph.com/deploy/",
+
     "create-local": "graph create --node http://localhost:8020/ arbitrum-usdc",
     "deploy-local": "graph deploy --node http://localhost:8020/ --ipfs http://localhost:5001 arbitrum-usdc"
   },

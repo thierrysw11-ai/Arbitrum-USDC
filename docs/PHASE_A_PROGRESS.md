@@ -11,9 +11,9 @@ agent tools, just parameterized by chain.
 | 1. Recon + `chains.ts` registry | **verified** — see "Address verification status" below; only token addresses still need manual verification |
 | 2. wagmi multi-chain config | **done** — `lib/wagmi.ts` now consumes the registry and registers all four chains. Chain switcher pill in nav verified working in dev (`docs/screenshots/`). |
 | 3. Refactor foundation files to consume `chains.ts` | **done** — `lib/aave/addresses.ts` and `lib/x402/networks.ts` are now thin compat wrappers; values flow from the registry. All 11 consumers compile unchanged. |
-| 4. Subgraph deploys (Base, OP, Polygon) | not started |
+| 4. Subgraph deploys (Base, OP, Polygon) | **scaffolded** — `subgraph/networks.json` populated with Circle native USDC addresses for all 4 chains, per-chain deploy scripts added to `subgraph/package.json`. Deploy command becomes a one-liner per chain. **Action required:** update `startBlock` in `networks.json` for each chain (current values are conservative placeholders) before running deploy. |
 | 5. Chain-aware Apollo clients | not started |
-| 6. Portfolio page chain-aware | not started |
+| 6. `usePortfolio` chain-aware | **done** — hook now resolves chain from `useAccount().chainId` (or explicit override), uses chain-specific Aave V3 addresses from the registry, gates reads when on unsupported chains. Returns `chainId`, `chainName`, `isUnsupportedChain` to the consumer. **Caveat:** downstream Portfolio page UI still has Arbitrum-only labels — sub-task to update those copy bits separately. |
 | 7. Aave Markets Overview chain-aware | not started |
 | 8. Send page chain-aware | not started |
 | 9. Sentinel agent tools take `chain` parameter | not started |

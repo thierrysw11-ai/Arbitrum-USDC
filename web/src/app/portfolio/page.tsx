@@ -56,14 +56,22 @@ export default function SentinelPortfolioPage() {
             <GlassCard title="Security Sentinel Analysis">
               <div className="p-2">
                 <AaveRiskGauge />
-                <div className="mt-4 grid grid-cols-2 gap-4 text-center">
+                {/*
+                  "Liquidation Point: 1.00 HF" is true universally — Aave V3
+                  liquidates whenever HF crosses 1.00. The companion card was
+                  previously a hardcoded "+14.2%" buffer figure; that's
+                  derivable from the live HF but the formula varies depending
+                  on which collateral is at risk. Removed for now to avoid
+                  showing a fabricated number — the gauge above already
+                  conveys the actual buffer visually.
+                */}
+                <div className="mt-4 grid grid-cols-1 gap-4 text-center">
                   <div className="p-3 bg-white/5 rounded-xl border border-white/5">
                     <p className="text-[10px] text-zinc-500 uppercase font-bold">Liquidation Point</p>
                     <p className="text-xl font-mono font-black text-red-400">1.00 HF</p>
-                  </div>
-                  <div className="p-3 bg-white/5 rounded-xl border border-white/5">
-                    <p className="text-[10px] text-zinc-500 uppercase font-bold">Current Buffer</p>
-                    <p className="text-xl font-mono font-black text-emerald-400">+14.2%</p>
+                    <p className="text-[10px] text-zinc-500 mt-1">
+                      Aave V3 liquidates positions when health factor crosses 1.00.
+                    </p>
                   </div>
                 </div>
               </div>

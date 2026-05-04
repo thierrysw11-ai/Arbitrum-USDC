@@ -1,30 +1,21 @@
-// src/lib/agent/scanner.ts
-import { ethers } from 'ethers';
+/**
+ * @deprecated As of the post-restore patch, this file is orphaned.
+ *
+ * The original `scanMetamaskPortfolio` function in this file:
+ *   - Set every token's `symbol` to the literal string "TOKEN" instead of
+ *     resolving real symbols via Alchemy metadata
+ *   - Injected fake `ETH_TEST` data when Alchemy returned nothing, polluting
+ *     the agent's tool results with test garbage
+ *   - Was the source of the "No significant external holdings detected"
+ *     misreporting in the Sentinel agent's output
+ *
+ * Wallet scanning now lives in `tools.ts` as the `get_wallet_holdings` tool.
+ * That implementation calls `alchemy_getTokenBalances` + `alchemy_getTokenMetadata`
+ * to resolve real symbols/names/decimals across Arbitrum, Base, Optimism,
+ * and Polygon, with proper error handling and no test data injection.
+ *
+ * Safe to delete this file: nothing in the repo imports from it. Left as a
+ * stub only so the deletion shows up clearly in a future `git rm` commit.
+ */
 
-export async function scanMetamaskPortfolio(address: string, provider: ethers.providers.JsonRpcProvider) {
-  try {
-    // This is the actual call to Alchemy
-    const tokenBalances = await provider.send("alchemy_getTokenBalances", [address, "erc20"]);
-    
-    // MAP REAL DATA
-const holdings = tokenBalances.tokenBalances
-  .map((token: any) => ({
-    symbol: "TOKEN", // Real symbol requires an extra metadata call
-    amount: ethers.utils.formatUnits(token.tokenBalance, 18), 
-  }))
-  .filter((t: any) => parseFloat(t.amount) > 0); // Start by showing EVERYTHING > 0
-
-    // --- TEST INJECTION ---
-    // If Alchemy returns nothing, we add this fake ETH to see if the UI updates
-    if (holdings.length === 0) {
-      console.log("DEBUG: Alchemy returned 0. Injecting test data.");
-      holdings.push({ symbol: 'ETH_TEST', amount: '0.5000', type: 'NATIVE' });
-    }
-    // -----------------------
-
-    return holdings;
-  } catch (error) {
-    console.error("Scanner Error:", error);
-    return [{ symbol: 'ERROR', amount: '0', type: 'DEBUG' }];
-  }
-}
+export {};
