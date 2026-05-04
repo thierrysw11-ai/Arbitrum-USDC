@@ -1,6 +1,6 @@
 {
   "name": "arbitrum-usdc-subgraph",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Subgraph indexing USDC Transfer events on Arbitrum One — hourly volume + whale-flagging with structured logs. Multi-chain ready via networks.json.",
   "private": true,
   "scripts": {

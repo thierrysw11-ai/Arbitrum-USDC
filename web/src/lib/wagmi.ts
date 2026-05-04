@@ -32,8 +32,18 @@ export function createWagmiConfig() {
     orderedChainConfigs.map((c) => [c.chainId, http(getRpcUrl(c))])
   );
 
+  // Canonical site URL — used by WalletConnect metadata so the wallet
+  // signing modal shows a consistent origin rather than whatever page
+  // the user happened to open the modal from. Overridable via env in
+  // case the dApp ever moves to a custom domain.
+  const siteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ?? 'https://arbitrum-usdc.vercel.app';
+
   return getDefaultConfig({
     appName: 'USDC Guardian',
+    appDescription: 'Wealth-manager-grade DeFi portfolio reports',
+    appUrl: siteUrl,
+    appIcon: `${siteUrl}/favicon.ico`,
     projectId,
     chains,
     transports,

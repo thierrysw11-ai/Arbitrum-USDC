@@ -15,7 +15,7 @@ import {
 // USDC is 6 decimals. Whale threshold = 1,000,000 USDC = 1e12 in raw units.
 const WHALE_THRESHOLD = BigInt.fromString("1000000000000")
 const HOUR = BigInt.fromI32(3600)
-const BUILD_TAG = "usdc-subgraph@v0.7.0"
+const BUILD_TAG = "usdc-subgraph@v0.8.0"
 
 export function handleTransfer(event: Transfer): void {
   // 1. Persist the raw Transfer event (immutable).
