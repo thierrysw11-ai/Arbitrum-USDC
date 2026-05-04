@@ -36,6 +36,7 @@ import { MonteCarloPanel } from './MonteCarloPanel';
 import { AssetMomentumPanel } from './AssetMomentumPanel';
 import { PortfolioCompositionPanel } from './PortfolioCompositionPanel';
 import { AssetCorrelationPanel } from './AssetCorrelationPanel';
+import { EtherfiInsightsPanel } from './EtherfiInsightsPanel';
 
 interface AssistantBlock {
   type: 'text' | 'tool_use';
@@ -266,9 +267,13 @@ export function PremiumAnalysisButton() {
                   )}
 
                   {/* WALLET TAB — multi-chain holdings (always renders, even
-                      without an Aave position). */}
+                      without an Aave position) + ether.fi protocol insights
+                      from the user's published subgraphs. */}
                   {activeTab === 'wallet' && address && (
-                    <WalletHoldingsPanel address={address} />
+                    <>
+                      <WalletHoldingsPanel address={address} />
+                      <EtherfiInsightsPanel walletAddress={address} />
+                    </>
                   )}
 
                   {/* MOMENTUM TAB — velocity + force, auto-discovers wallet. */}
