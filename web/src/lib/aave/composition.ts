@@ -151,20 +151,34 @@ function isAaveReceiptToken(symbol: string): { isAToken: boolean; underlying?: s
 }
 
 /**
- * Classify a token by symbol. Returns the canonical classification, with
- * an "Other / Unclassified" fallback for unknowns (which is honest — the
- * report should disclose what we don't know rather than guessing).
+ * Classify a token by symbol.
+ *
+ * @param symbol  — token symbol (case-insensitive)
+ * @param opts.xray — if true, looks through wrapper tokens (aTokens, possibly
+ *   LP tokens in future) to their underlying classification. Mirrors the
+ *   TradFi "X-ray" convention where a fund is decomposed into its
+ *   constituent equities for the purposes of asset-class analysis.
+ *   Default: false (treat wrappers as their own supersector).
  */
-export function classifyToken(symbol: string): TokenClassification {
+export function classifyToken(
+  symbol: string,
+  opts: { xray?: boolean } = {}
+): TokenClassification {
   const upper = symbol.toUpperCase();
   // Direct registry hit
   const direct = TOKEN_REGISTRY[upper];
   if (direct) return direct;
 
-  // Aave receipt token? Reclassify with underlying classification.
+  // Aave receipt token? Either reclassify-with-underlying-tag (default) or
+  // fully look through to the underlying (xray mode).
   const aave = isAaveReceiptToken(symbol);
   if (aave.isAToken && aave.underlying) {
     const underlyingCls = TOKEN_REGISTRY[aave.underlying];
+    if (opts.xray && underlyingCls) {
+      // X-ray: pretend the user holds the underlying directly. Treats
+      // an aArbUSDCn position as USDC for asset-class analysis.
+      return underlyingCls;
+    }
     return {
       supersector: 'Aave Receipt Tokens',
       sector: underlyingCls
@@ -255,9 +269,14 @@ const MARKET_CAP_LABELS: Record<MarketCapBucket, string> = {
  *
  * Holdings with usdValue <= 0 are dropped before aggregation — they don't
  * meaningfully contribute to "what does your portfolio look like".
+ *
+ * @param opts.xray — pass-through to classifyToken. When true, wrapper
+ *   tokens (aTokens for now, LP/LRT in future) are decomposed to their
+ *   underlying for asset-class analysis. Default false.
  */
 export function analyzeComposition(
-  holdings: HoldingInput[]
+  holdings: HoldingInput[],
+  opts: { xray?: boolean } = {}
 ): CompositionAnalysis {
   const filtered = holdings.filter((h) => h.usdValue > 0);
   const totalUsd = filtered.reduce((acc, h) => acc + h.usdValue, 0);
@@ -285,7 +304,7 @@ export function analyzeComposition(
   const mcMap = new Map<MarketCapBucket, { usd: number; symbols: Set<string> }>();
 
   for (const h of filtered) {
-    const cls = classifyToken(h.symbol);
+    const cls = classifyToken(h.symbol, opts);
     // Supersector
     const sRow = supersectorMap.get(cls.supersector) ?? {
       usd: 0,
@@ -348,7 +367,7 @@ export function analyzeComposition(
 
   const topHoldings: TopHoldingRow[] = filtered
     .map((h) => {
-      const cls = classifyToken(h.symbol);
+      const cls = classifyToken(h.symbol, opts);
       return {
         symbol: h.symbol,
         usd: h.usdValue,

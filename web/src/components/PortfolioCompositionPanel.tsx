@@ -18,7 +18,8 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Layers, Loader2, AlertTriangle } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+import { Layers, Loader2, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 
 import {
   analyzeComposition,
@@ -95,6 +96,7 @@ export function PortfolioCompositionPanel({
   const [data, setData] = useState<WalletHoldingsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [xray, setXray] = useState(true); // default ON — match TradFi convention
 
   useEffect(() => {
     let cancelled = false;
@@ -148,16 +150,37 @@ export function PortfolioCompositionPanel({
         holdings.push({ symbol: t.symbol, usdValue: t.usdValue });
       }
     }
-    return analyzeComposition(holdings);
-  }, [data]);
+    return analyzeComposition(holdings, { xray });
+  }, [data, xray]);
 
   return (
     <div className="bg-zinc-900/50 border border-white/5 rounded-2xl p-5 mb-5">
-      <div className="flex items-center gap-2 mb-3">
-        <Layers size={14} className="text-zinc-500" />
-        <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
-          Portfolio Composition — Sector / Market-Cap / Concentration
-        </p>
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+        <div className="flex items-center gap-2">
+          <Layers size={14} className="text-zinc-500" />
+          <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+            Portfolio Composition — Sector / Market-Cap / Concentration
+          </p>
+        </div>
+        {/* X-ray toggle: when ON, looks through Aave aTokens to their
+            underlying classification (matches TradFi report convention
+            where funds are decomposed to constituent equities). */}
+        <button
+          onClick={() => setXray((v) => !v)}
+          className={`inline-flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-bold px-2 py-1 rounded-full border transition-colors ${
+            xray
+              ? 'border-purple-500/40 bg-purple-500/10 text-purple-300'
+              : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'
+          }`}
+          title={
+            xray
+              ? 'X-ray ON: aTokens decomposed to underlying (USDC, ETH, etc.)'
+              : 'X-ray OFF: aTokens shown as their own supersector'
+          }
+        >
+          {xray ? <Eye size={11} /> : <EyeOff size={11} />}
+          X-ray {xray ? 'on' : 'off'}
+        </button>
       </div>
 
       {isLoading ? (
@@ -195,6 +218,12 @@ function CompositionResult({ comp }: { comp: CompositionAnalysis }) {
 
   return (
     <div className="space-y-5">
+      {/* Asset Class allocation — top-level supersector pie + table.
+          Mirrors the TradFi report's page-1 "Asset allocation" view that
+          summarizes the portfolio at the highest level before drilling
+          into granular sectors below. */}
+      <AssetClassPie comp={comp} />
+
       {/* Concentration headline */}
       {comp.concentration && (
         <ConcentrationCard
@@ -428,6 +457,107 @@ function Metric({
       {hint && (
         <p className="text-[9px] text-zinc-600 mt-0.5">{hint}</p>
       )}
+    </div>
+  );
+}
+
+// =========================================================================
+// Asset Class Pie — TradFi page-1 mirror. Pie + adjacent legend table
+// using only the top-level Supersector totals, so the user gets the
+// high-level allocation summary before drilling into sector detail.
+// =========================================================================
+
+function AssetClassPie({ comp }: { comp: CompositionAnalysis }) {
+  const fmtUsd = (n: number): string => {
+    if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
+    if (n >= 1_000) return `$${(n / 1_000).toFixed(2)}K`;
+    return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  };
+
+  // Pie data — sized by USD value, named by supersector.
+  const pieData = comp.bySupersector.map((row) => ({
+    name: row.supersector,
+    value: row.usd,
+    pct: row.pct,
+    color: SUPERSECTOR_COLORS[row.supersector] ?? '#71717a',
+  }));
+
+  return (
+    <div>
+      <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-3">
+        Asset Class Allocation
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-[180px_1fr] gap-4 items-center">
+        {/* Pie */}
+        <div className="h-[180px] mx-auto md:mx-0">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={pieData}
+                dataKey="value"
+                nameKey="name"
+                innerRadius={45}
+                outerRadius={80}
+                paddingAngle={1}
+                stroke="#0a0a0a"
+                strokeWidth={2}
+              >
+                {pieData.map((d, i) => (
+                  <Cell key={i} fill={d.color} />
+                ))}
+              </Pie>
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: '#0f172a',
+                  border: '1px solid #1e293b',
+                  borderRadius: '8px',
+                  fontSize: '12px',
+                }}
+                formatter={(value: number, _name: string, item) => {
+                  const d = item.payload as { pct: number };
+                  return [
+                    `${fmtUsd(value)} (${d.pct.toFixed(1)}%)`,
+                    item.payload.name,
+                  ];
+                }}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Legend table — mirrors the TradFi "Key / Asset holdings / %" 3-col layout */}
+        <div className="overflow-hidden rounded-lg border border-white/5">
+          <div className="grid grid-cols-[auto_1fr_auto_auto] gap-3 px-3 py-2 bg-zinc-900/80 text-[9px] uppercase tracking-widest text-zinc-500 font-bold">
+            <span>Key</span>
+            <span>Asset class</span>
+            <span className="text-right">USD</span>
+            <span className="text-right">%</span>
+          </div>
+          {comp.bySupersector.map((row) => {
+            const color = SUPERSECTOR_COLORS[row.supersector] ?? '#71717a';
+            return (
+              <div
+                key={row.supersector}
+                className="grid grid-cols-[auto_1fr_auto_auto] gap-3 px-3 py-1.5 text-[12px] border-t border-white/5 items-center"
+              >
+                <span
+                  className="w-3 h-3 rounded-sm flex-shrink-0"
+                  style={{ backgroundColor: color }}
+                />
+                <span className="text-zinc-200 font-mono truncate">
+                  {row.supersector}
+                </span>
+                <span className="text-zinc-300 font-mono text-right whitespace-nowrap">
+                  {fmtUsd(row.usd)}
+                </span>
+                <span className="text-zinc-100 font-mono font-bold text-right whitespace-nowrap">
+                  {row.pct.toFixed(1)}%
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
