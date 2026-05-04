@@ -6,11 +6,13 @@ import ConnectButton from '@/components/ConnectButton';
 import NavLinks from '@/components/NavLinks';
 
 export const metadata: Metadata = {
-  title: 'USDC Guardian | Aave V3 Risk & Yield Monitor on Arbitrum',
-  description: 'Real-time Aave V3 risk protection, USDC yield discovery, and AI-powered insights on Arbitrum One.',
+  title: 'USDC Guardian — Wealth-Manager-Grade DeFi Reports',
+  description:
+    'Get a TradFi-quality portfolio report on your on-chain holdings. Sector allocation, concentration risk, Monte Carlo simulation, correlation matrix, action recommendations — across all 5 major EVM chains.',
   openGraph: {
-    title: 'USDC Guardian',
-    description: 'Real-time Aave V3 risk monitoring and smart USDC yield strategies on Arbitrum.',
+    title: 'USDC Guardian — DeFi Portfolio Reports',
+    description:
+      'Wealth-manager-grade reports for your on-chain holdings. Free preview, full report 5 USDC.',
   },
 };
 
@@ -35,7 +37,7 @@ export default function RootLayout({
                 <div>
                   <span className="font-black tracking-tighter text-3xl">USDC</span>
                   <span className="font-black tracking-tighter text-3xl text-zinc-300">Guardian</span>
-                  <p className="text-[10px] text-emerald-400 tracking-[1px] -mt-1">ARBITRUM ONE</p>
+                  <p className="text-[10px] text-emerald-400 tracking-[1px] -mt-1">DeFi Portfolio Reports</p>
                 </div>
               </Link>
 

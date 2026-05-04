@@ -16,34 +16,42 @@ export default function SentinelPortfolioPage() {
     <div className="min-h-screen bg-[#050505] text-zinc-100">
       <main className="max-w-7xl mx-auto px-6 py-10 space-y-12">
         
-        {/* SECTION 1: HERO & PREMIUM ACCESS */}
+        {/* SECTION 1: HERO & PREMIUM ACCESS — re-aligned to the new
+            "wealth-manager-grade DeFi reports" positioning. The Run-
+            analysis button on the right is the conversion target. */}
         <section className="relative overflow-hidden rounded-[2.5rem] border border-white/5 bg-gradient-to-b from-zinc-900 to-black p-8 md:p-12 shadow-2xl">
           <div className="relative z-10 flex flex-col lg:flex-row items-start justify-between gap-12">
             <div className="max-w-2xl space-y-6">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase tracking-widest">
-                System Live: Arbitrum One Node Active
+                {isConnected
+                  ? 'Wallet connected · ready to generate'
+                  : 'Free preview · no signup'}
               </div>
-              
+
               <h1 className="text-5xl md:text-7xl font-black tracking-tighter leading-[0.9] uppercase italic">
-                Sentinel <span className="text-zinc-500">Elite</span> <br />
-                Dashboard.
+                Your DeFi <br />
+                <span className="text-zinc-500">portfolio</span> report.
               </h1>
-              
+
               <p className="text-zinc-400 text-lg leading-relaxed max-w-xl">
-                Real-time risk monitoring for USDC positions. Access deep-dive impact 
-                assessments and yield benchmarking via agentic x402 settlement.
+                Sector allocation, concentration risk, Monte Carlo simulation,
+                correlation matrix, action recommendations — across all 5 EVM
+                chains, generated from your live on-chain positions. Free
+                preview below; full report for{' '}
+                <span className="font-mono text-zinc-200">5 USDC</span>{' '}
+                settled on-chain via x402.
               </p>
 
               {!isConnected && (
                 <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400 text-xs font-bold uppercase tracking-tight">
-                  Connect wallet to view portfolio-specific risk parameters
+                  Connect a wallet to populate your free preview
                 </div>
               )}
             </div>
 
-            {/* Premium Analysis Trigger - No props needed anymore */}
+            {/* Primary conversion action — opens the full-report modal */}
             <div className="w-full lg:w-auto self-center lg:self-start">
-               <PremiumAnalysisButton />
+              <PremiumAnalysisButton />
             </div>
           </div>
 
