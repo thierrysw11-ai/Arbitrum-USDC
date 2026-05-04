@@ -44,12 +44,6 @@ interface Props {
     chainSlug?: string;
     isUnsupportedChain?: boolean;
   };
-  // Address used for the wallet-holdings scan. May differ from
-  // the portfolio's resolved address in spectator mode.
-  walletAddress?: `0x${string}`;
-  // The chain slug to scan for wallet holdings — usually whichever chain
-  // usePortfolio resolved to.
-  walletChainSlug?: string;
   loading?: boolean;
 }
 
@@ -139,8 +133,6 @@ const ASSET_PALETTE = [
 
 export function SentinelAnalysisVisuals({
   portfolio,
-  walletAddress,
-  walletChainSlug,
   loading,
 }: Props) {
   const { account, positions, isUnsupportedChain, chainName } = portfolio;
@@ -159,26 +151,11 @@ export function SentinelAnalysisVisuals({
   const totalDebtBase = account.totalDebtBase;
   const hasPosition = totalCollateralBase > 0n || totalDebtBase > 0n;
 
-  // Even without an Aave position we want to show wallet holdings — that's
-  // exactly the scenario where "what do I actually hold?" matters most.
-  const scanAddress = walletAddress ?? portfolio.address;
-  const scanSlug =
-    walletChainSlug ?? portfolio.chainSlug ?? 'arbitrum-one';
-
   if (!hasPosition) {
     return (
-      <div className="space-y-4">
-        <EmptyState
-          message={`No active Aave V3 position on ${chainName ?? 'this chain'}. Showing wallet holdings only.`}
-        />
-        {scanAddress && (
-          <WalletHoldingsPanel
-            address={scanAddress}
-            chainSlug={scanSlug}
-            chainName={chainName ?? 'this chain'}
-          />
-        )}
-      </div>
+      <EmptyState
+        message={`No active Aave V3 position on ${chainName ?? 'this chain'}. Switch tabs above to see wallet holdings, momentum, or premium analysis.`}
+      />
     );
   }
 
@@ -240,15 +217,6 @@ export function SentinelAnalysisVisuals({
       {collateralAssets.length > 0 && (
         <CollateralBar assets={collateralAssets} />
       )}
-
-      {/* Wallet holdings (everything outside Aave) */}
-      {scanAddress && (
-        <WalletHoldingsPanel
-          address={scanAddress}
-          chainSlug={scanSlug}
-          chainName={chainName ?? 'this chain'}
-        />
-      )}
     </div>
   );
 }
@@ -258,7 +226,7 @@ export function SentinelAnalysisVisuals({
 // with a horizontal stacked bar of USD value composition.
 // =========================================================================
 
-function WalletHoldingsPanel({
+export function WalletHoldingsPanel({
   address,
 }: {
   address: string;
@@ -580,17 +548,84 @@ function WalletHoldingsPanel({
         </div>
       </div>
 
-      {(visibleRows.length > 40 ||
-        unpricedCount > 0 ||
-        anyChainTruncated ||
-        anyChainErrored) && (
+      {/* Per-chain scan status — surfaces exactly which chains succeeded
+          and which failed, with the upstream error message. The previous
+          one-liner ("One or more chains failed") was opaque — this lets
+          the user diagnose at a glance (most common cause: missing
+          ALCHEMY_API_KEY or rate-limited free tier). */}
+      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-1.5">
+        {data.chains.map((c) => {
+          const isError = !!c.error;
+          const isEmpty = !isError && c.totalUsd === 0 && c.erc20Count === 0;
+          const status = isError ? 'error' : isEmpty ? 'empty' : 'ok';
+          const color =
+            status === 'error'
+              ? '#ef4444'
+              : status === 'empty'
+                ? '#71717a'
+                : '#22c55e';
+          return (
+            <div
+              key={c.chainSlug}
+              className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-zinc-900/40 border border-white/5 text-[11px]"
+            >
+              <span
+                className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                style={{ backgroundColor: color }}
+              />
+              <span
+                className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded whitespace-nowrap"
+                style={{
+                  backgroundColor: `${CHAIN_BADGE_COLORS[c.chainSlug] ?? '#52525b'}33`,
+                  color: CHAIN_BADGE_COLORS[c.chainSlug] ?? '#a1a1aa',
+                }}
+              >
+                {CHAIN_SHORT_LABELS[c.chainSlug] ?? c.chainSlug}
+              </span>
+              <span className="font-mono text-zinc-300 font-semibold flex-shrink-0">
+                {c.chainName}
+              </span>
+              <span className="text-zinc-500 ml-auto truncate" title={c.error ?? ''}>
+                {isError
+                  ? c.error
+                  : isEmpty
+                    ? 'no holdings'
+                    : `${fmtUsd(c.legitimateUsd)} · ${c.erc20.filter((e) => !e.isSpam).length + (c.nativeBalance.balanceFormatted > 0 ? 1 : 0)} tok`}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* If EVERY chain errored with the same root cause, surface a clear
+          actionable banner — most often this is a missing/invalid Alchemy
+          key, which the per-chain rows can't make obvious enough. */}
+      {anyChainErrored && data.chains.every((c) => c.error) && (
+        <div className="mt-3 flex items-start gap-2 px-3 py-2 bg-red-500/10 border border-red-500/30 text-red-300 rounded-lg text-[12px]">
+          <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold mb-1">
+              All 5 chains failed to scan — likely an Alchemy auth/key issue.
+            </p>
+            <p className="text-red-300/80 text-[11px]">
+              Check that{' '}
+              <code className="font-mono">ALCHEMY_API_KEY</code> is set in
+              your <code className="font-mono">.env.local</code> (and on
+              Vercel for production), and that the key has access to the
+              Prices API + the 5 networks (Ethereum, Arbitrum, Base,
+              Optimism, Polygon).
+            </p>
+          </div>
+        </div>
+      )}
+
+      {(visibleRows.length > 40 || unpricedCount > 0 || anyChainTruncated) && (
         <p className="text-[10px] text-zinc-500 mt-2">
           {visibleRows.length > 40 &&
             `Showing top 40 of ${visibleRows.length} tokens. `}
           {unpricedCount > 0 &&
             `${unpricedCount} legit token${unpricedCount === 1 ? '' : 's'} without a USD price. `}
           {anyChainTruncated && `Some chains capped at top 75 by token count. `}
-          {anyChainErrored && `One or more chains failed to scan. `}
         </p>
       )}
     </div>

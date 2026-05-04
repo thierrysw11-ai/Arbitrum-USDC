@@ -28,8 +28,10 @@ import { X, Zap, Shield, Loader2 } from 'lucide-react';
 import { useAccount } from 'wagmi';
 
 import { usePortfolio } from '@/lib/aave/usePortfolio';
-import { getChain, DEFAULT_CHAIN } from '@/lib/chains';
-import { SentinelAnalysisVisuals } from './SentinelAnalysisVisuals';
+import {
+  SentinelAnalysisVisuals,
+  WalletHoldingsPanel,
+} from './SentinelAnalysisVisuals';
 import { MonteCarloPanel } from './MonteCarloPanel';
 import { AssetMomentumPanel } from './AssetMomentumPanel';
 
@@ -43,12 +45,65 @@ interface WireMessage {
   content?: string | AssistantBlock[];
 }
 
+// Tab IDs used by the modal body. Order here = left-to-right visual order.
+type TabId = 'risk' | 'wallet' | 'momentum' | 'premium' | 'ai';
+
+interface TabSpec {
+  id: TabId;
+  label: string;
+  badge?: string;
+}
+
+const TABS: TabSpec[] = [
+  { id: 'risk', label: 'Risk Profile' },
+  { id: 'wallet', label: 'Wallet' },
+  { id: 'momentum', label: 'Momentum' },
+  { id: 'premium', label: 'Premium', badge: 'PAID' },
+  { id: 'ai', label: 'AI Narrative' },
+];
+
+function TabNav({
+  active,
+  onChange,
+}: {
+  active: TabId;
+  onChange: (id: TabId) => void;
+}) {
+  return (
+    <div className="flex border-b border-zinc-800 mb-5 -mx-1 px-1 overflow-x-auto">
+      {TABS.map((t) => {
+        const isActive = active === t.id;
+        return (
+          <button
+            key={t.id}
+            onClick={() => onChange(t.id)}
+            className={`px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest border-b-2 transition-colors whitespace-nowrap inline-flex items-center gap-1.5 ${
+              isActive
+                ? 'text-purple-300 border-purple-500'
+                : 'text-zinc-500 border-transparent hover:text-zinc-300 hover:border-zinc-700'
+            }`}
+            aria-pressed={isActive}
+          >
+            {t.label}
+            {t.badge && (
+              <span className="text-[8px] uppercase tracking-widest text-purple-400/80 border border-purple-500/30 px-1.5 py-0.5 rounded">
+                {t.badge}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function PremiumAnalysisButton() {
   const { address, isConnected } = useAccount();
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<TabId>('risk');
 
   // Pull the live portfolio whenever the modal is open. The hook honors the
   // currently-connected chain (post-Phase-A sub-task 6), so visuals reflect
@@ -184,8 +239,7 @@ export function PremiumAnalysisButton() {
             </div>
 
             {/* Body — scrollable */}
-            <div className="p-8 overflow-y-auto flex-1 space-y-6">
-              {/* VISUALS — render immediately from usePortfolio */}
+            <div className="p-6 md:p-8 overflow-y-auto flex-1">
               {!isConnected ? (
                 <div className="bg-zinc-900/50 border border-white/5 rounded-2xl p-12 text-center">
                   <Shield className="w-16 h-16 text-purple-400 mx-auto mb-4" />
@@ -199,97 +253,48 @@ export function PremiumAnalysisButton() {
                 </div>
               ) : (
                 <>
-                  <SentinelAnalysisVisuals
-                    portfolio={portfolio}
-                    walletAddress={address}
-                    walletChainSlug={
-                      (getChain(portfolio.chainId) ?? DEFAULT_CHAIN).slug
-                    }
-                    loading={portfolio.loading}
-                  />
+                  <TabNav active={activeTab} onChange={setActiveTab} />
 
-                  {/* Asset Momentum & Force — free, derived from Alchemy
-                      historical prices. With walletAddress passed in, it
-                      auto-discovers every priced non-spam ERC-20 the wallet
-                      holds across all 5 supported chains and analyzes the
-                      top 15 by USD value, alongside the Aave positions and
-                      a small market-context set. */}
-                  {visualsReady && (
+                  {/* RISK PROFILE TAB */}
+                  {activeTab === 'risk' && (
+                    <SentinelAnalysisVisuals
+                      portfolio={portfolio}
+                      loading={portfolio.loading}
+                    />
+                  )}
+
+                  {/* WALLET TAB — multi-chain holdings (always renders, even
+                      without an Aave position). */}
+                  {activeTab === 'wallet' && address && (
+                    <WalletHoldingsPanel address={address} />
+                  )}
+
+                  {/* MOMENTUM TAB — velocity + force, auto-discovers wallet. */}
+                  {activeTab === 'momentum' && (
                     <AssetMomentumPanel
                       positions={portfolio.positions}
                       walletAddress={address}
                     />
                   )}
 
-                  {/* Monte Carlo (paid via x402) — headline premium feature. */}
-                  {visualsReady && (
+                  {/* PREMIUM TAB — Monte Carlo + Sharpe + frontier, paid x402. */}
+                  {activeTab === 'premium' && (
                     <MonteCarloPanel hasPosition={visualsReady} />
                   )}
-                </>
-              )}
 
-              {/* DIVIDER */}
-              {visualsReady && (
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 h-px bg-zinc-800" />
-                  <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
-                    AI Narrative
-                  </p>
-                  <div className="flex-1 h-px bg-zinc-800" />
-                </div>
-              )}
-
-              {/* NARRATIVE (agent text) */}
-              {visualsReady && (
-                <>
-                  {!analysis && !error && !isLoading && (
-                    <div className="text-center py-6">
-                      <button
-                        onClick={runAnalysis}
-                        className="px-10 py-4 bg-gradient-to-r from-purple-600 to-violet-600 rounded-2xl font-semibold text-base inline-flex items-center gap-3 shadow-lg shadow-purple-500/30"
-                      >
-                        Generate AI Narrative
-                        <Zap className="w-5 h-5" />
-                      </button>
-                      <p className="text-zinc-500 text-xs mt-3">
-                        Sentinel will run get_portfolio, two price-shock simulations, and a full wallet scan, then write a multi-section risk assessment.
-                      </p>
-                    </div>
-                  )}
-
-                  {isLoading && (
-                    <div className="flex flex-col items-center justify-center min-h-[160px] text-center">
-                      <Loader2 className="w-10 h-10 text-purple-400 mb-4 animate-spin" />
-                      <p className="text-zinc-300 font-semibold">
-                        Reading position from Aave V3 Pool…
-                      </p>
-                      <p className="text-zinc-500 text-sm mt-1">
-                        Running shock simulations and wallet scan
-                      </p>
-                    </div>
-                  )}
-
-                  {error && (
-                    <div className="space-y-3">
-                      <div className="bg-red-950 border border-red-800 rounded-2xl p-5 text-red-400 text-sm">
-                        {error}
-                      </div>
-                      <button
-                        onClick={() => {
-                          reset();
-                          runAnalysis();
-                        }}
-                        className="w-full px-6 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-zinc-200 font-semibold transition-colors"
-                      >
-                        Retry
-                      </button>
-                    </div>
-                  )}
-
-                  {analysis && (
-                    <div className="prose prose-invert max-w-none text-zinc-200 leading-relaxed whitespace-pre-wrap text-sm bg-zinc-900/30 border border-white/5 rounded-2xl p-6">
-                      {analysis}
-                    </div>
+                  {/* AI NARRATIVE TAB */}
+                  {activeTab === 'ai' && (
+                    <AINarrativeTab
+                      analysis={analysis}
+                      error={error}
+                      isLoading={isLoading}
+                      onRun={runAnalysis}
+                      onRetry={() => {
+                        reset();
+                        runAnalysis();
+                      }}
+                      visualsReady={visualsReady}
+                    />
                   )}
                 </>
               )}
@@ -298,5 +303,89 @@ export function PremiumAnalysisButton() {
         </div>
       )}
     </>
+  );
+}
+
+// =========================================================================
+// AI Narrative tab — extracted so the modal body stays clean.
+// =========================================================================
+
+function AINarrativeTab({
+  analysis,
+  error,
+  isLoading,
+  onRun,
+  onRetry,
+  visualsReady,
+}: {
+  analysis: string | null;
+  error: string | null;
+  isLoading: boolean;
+  onRun: () => void;
+  onRetry: () => void;
+  visualsReady: boolean;
+}) {
+  if (!visualsReady) {
+    return (
+      <div className="bg-zinc-900/50 border border-white/5 rounded-2xl p-8 text-center text-zinc-500 text-sm">
+        AI narrative needs an active Aave V3 position to analyze. Connect a
+        wallet with a position, or open the Risk Profile tab to see what's
+        currently being read.
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[300px] text-center">
+        <Loader2 className="w-10 h-10 text-purple-400 mb-4 animate-spin" />
+        <p className="text-zinc-300 font-semibold">
+          Reading position from Aave V3 Pool…
+        </p>
+        <p className="text-zinc-500 text-sm mt-1">
+          Running shock simulations and wallet scan
+        </p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-3">
+        <div className="bg-red-950 border border-red-800 rounded-2xl p-5 text-red-400 text-sm">
+          {error}
+        </div>
+        <button
+          onClick={onRetry}
+          className="w-full px-6 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-zinc-200 font-semibold transition-colors"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (!analysis) {
+    return (
+      <div className="text-center py-10">
+        <button
+          onClick={onRun}
+          className="px-10 py-4 bg-gradient-to-r from-purple-600 to-violet-600 rounded-2xl font-semibold text-base inline-flex items-center gap-3 shadow-lg shadow-purple-500/30"
+        >
+          Generate AI Narrative
+          <Zap className="w-5 h-5" />
+        </button>
+        <p className="text-zinc-500 text-xs mt-3 max-w-md mx-auto">
+          Sentinel will run get_portfolio, two price-shock simulations, and a
+          full wallet scan, then write a multi-section risk assessment.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="prose prose-invert max-w-none text-zinc-200 leading-relaxed whitespace-pre-wrap text-sm bg-zinc-900/30 border border-white/5 rounded-2xl p-6">
+      {analysis}
+    </div>
   );
 }
