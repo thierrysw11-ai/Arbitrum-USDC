@@ -702,6 +702,280 @@ export function EfficientFrontierScatter({
 }
 
 // =========================================================================
+// Drawdown histogram — terminal portfolio value bucketed as % loss/gain
+// =========================================================================
+
+export function DrawdownHistogram({
+  bins,
+  counts,
+  initialUsd,
+  width = 520,
+  height = 140,
+}: {
+  /** Upper-edge USD value of each bucket. */
+  bins: number[];
+  counts: number[];
+  initialUsd: number;
+  width?: number;
+  height?: number;
+}) {
+  const padLeft = 28;
+  const padRight = 6;
+  const padTop = 12;
+  const padBottom = 26;
+  const chartW = width - padLeft - padRight;
+  const chartH = height - padTop - padBottom;
+  const maxCount = Math.max(1, ...counts);
+  const barW = bins.length > 0 ? chartW / bins.length : chartW;
+
+  // Color by % loss from initial: green (gain), yellow (mild loss), red (deep loss).
+  const colorFor = (upperUsd: number): string => {
+    const lossPct = ((initialUsd - upperUsd) / initialUsd) * 100;
+    if (lossPct >= 30) return CHART_COLORS.risky;
+    if (lossPct >= 10) return CHART_COLORS.caution;
+    return CHART_COLORS.safe;
+  };
+
+  // Find x position of the "initial value" reference line.
+  const findX = (usd: number) => {
+    if (bins.length === 0) return padLeft;
+    const lo = Math.min(...bins) - (bins[1] - bins[0] || 0);
+    const hi = bins[bins.length - 1];
+    const t = Math.max(0, Math.min(1, (usd - lo) / (hi - lo || 1)));
+    return padLeft + t * chartW;
+  };
+  const breakEvenX = findX(initialUsd);
+
+  return (
+    <Svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+      {/* Y gridlines */}
+      {[0, 0.25, 0.5, 0.75, 1].map((t, i) => {
+        const y = padTop + (1 - t) * chartH;
+        return (
+          <G key={i}>
+            <Line
+              x1={padLeft}
+              y1={y}
+              x2={width - padRight}
+              y2={y}
+              stroke={CHART_COLORS.grid}
+              strokeWidth={0.5}
+              strokeDasharray="2 2"
+            />
+            <SvgText
+              x={padLeft - 3}
+              y={y + 2}
+              fill={CHART_COLORS.textSubtle}
+              fontSize={6}
+              textAnchor="end"
+            >
+              {Math.round(maxCount * t)}
+            </SvgText>
+          </G>
+        );
+      })}
+      {/* Break-even reference line at initial portfolio value */}
+      <Line
+        x1={breakEvenX}
+        y1={padTop}
+        x2={breakEvenX}
+        y2={padTop + chartH}
+        stroke={CHART_COLORS.text}
+        strokeWidth={0.7}
+        strokeDasharray="3 3"
+      />
+      <SvgText
+        x={breakEvenX + 3}
+        y={padTop + 8}
+        fill={CHART_COLORS.text}
+        fontSize={6}
+      >
+        Break-even
+      </SvgText>
+      {/* Bars */}
+      {bins.map((upper, i) => {
+        const c = counts[i] ?? 0;
+        const h = (c / maxCount) * chartH;
+        const x = padLeft + i * barW;
+        const y = padTop + chartH - h;
+        return (
+          <Rect
+            key={i}
+            x={x + 0.5}
+            y={y}
+            width={Math.max(1, barW - 1)}
+            height={h}
+            fill={colorFor(upper)}
+            rx={1}
+          />
+        );
+      })}
+      {/* X-axis labels — show every Nth bin as % loss */}
+      {bins.map((upper, i) => {
+        if (i % Math.max(1, Math.floor(bins.length / 8)) !== 0 && i !== bins.length - 1) {
+          return null;
+        }
+        const x = padLeft + i * barW + barW / 2;
+        const lossPct = ((initialUsd - upper) / initialUsd) * 100;
+        const label = lossPct >= 0 ? `−${lossPct.toFixed(0)}%` : `+${Math.abs(lossPct).toFixed(0)}%`;
+        return (
+          <SvgText
+            key={i}
+            x={x}
+            y={height - 12}
+            fill={CHART_COLORS.textSubtle}
+            fontSize={6}
+            textAnchor="middle"
+          >
+            {label}
+          </SvgText>
+        );
+      })}
+      <SvgText
+        x={padLeft + chartW / 2}
+        y={height - 2}
+        fill={CHART_COLORS.textSubtle}
+        fontSize={6}
+        textAnchor="middle"
+      >
+        Terminal portfolio value (vs. start) · count of paths
+      </SvgText>
+    </Svg>
+  );
+}
+
+// =========================================================================
+// Portfolio sample-paths chart — % of initial value with drawdown lines
+// =========================================================================
+
+export function PortfolioPathsChart({
+  paths,
+  horizonDays,
+  initialUsd,
+  width = 520,
+  height = 160,
+}: {
+  paths: Array<{ daily: number[]; breachedDrawdown: boolean }>;
+  horizonDays: number;
+  initialUsd: number;
+  width?: number;
+  height?: number;
+}) {
+  const padLeft = 28;
+  const padRight = 8;
+  const padTop = 6;
+  const padBottom = 18;
+  const chartW = width - padLeft - padRight;
+  const chartH = height - padTop - padBottom;
+
+  // Y axis is % of initial. Cap at 200% upper, 0% lower (loss can't exceed 100%
+  // for a long-only portfolio but room for paths that gain).
+  const yMin = 0;
+  const yMax = 200;
+
+  const xFor = (day: number) => padLeft + (day / horizonDays) * chartW;
+  const yFor = (pct: number) =>
+    padTop + (1 - Math.max(yMin, Math.min(yMax, pct)) / yMax) * chartH;
+
+  return (
+    <Svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+      {/* Y gridlines at 0/50/100/150/200 */}
+      {[0, 50, 100, 150, 200].map((v, i) => {
+        const y = yFor(v);
+        return (
+          <G key={i}>
+            <Line
+              x1={padLeft}
+              y1={y}
+              x2={width - padRight}
+              y2={y}
+              stroke={CHART_COLORS.grid}
+              strokeWidth={0.5}
+              strokeDasharray="2 2"
+            />
+            <SvgText
+              x={padLeft - 3}
+              y={y + 2}
+              fill={CHART_COLORS.textSubtle}
+              fontSize={6}
+              textAnchor="end"
+            >
+              {`${v}%`}
+            </SvgText>
+          </G>
+        );
+      })}
+      {/* Break-even at 100% */}
+      <Line
+        x1={padLeft}
+        y1={yFor(100)}
+        x2={width - padRight}
+        y2={yFor(100)}
+        stroke={CHART_COLORS.textSubtle}
+        strokeWidth={0.8}
+        strokeDasharray="3 3"
+      />
+      {/* -30% drawdown line */}
+      <Line
+        x1={padLeft}
+        y1={yFor(70)}
+        x2={width - padRight}
+        y2={yFor(70)}
+        stroke={CHART_COLORS.risky}
+        strokeWidth={0.8}
+        strokeDasharray="3 3"
+      />
+      <SvgText
+        x={width - padRight - 1}
+        y={yFor(70) - 2}
+        fill={CHART_COLORS.risky}
+        fontSize={6}
+        textAnchor="end"
+      >
+        −30%
+      </SvgText>
+      {/* Paths */}
+      {paths.map((p, i) => {
+        const points = p.daily
+          .map((usd, day) => {
+            const pct = (usd / initialUsd) * 100;
+            return `${xFor(day).toFixed(2)},${yFor(pct).toFixed(2)}`;
+          })
+          .join(' ');
+        return (
+          <Polyline
+            key={i}
+            points={points}
+            stroke={p.breachedDrawdown ? CHART_COLORS.risky : '#a1a1aa'}
+            strokeWidth={p.breachedDrawdown ? 0.8 : 0.4}
+            strokeOpacity={p.breachedDrawdown ? 0.7 : 0.3}
+            fill="none"
+          />
+        );
+      })}
+      {/* X-axis ticks */}
+      {[0, Math.floor(horizonDays / 4), Math.floor(horizonDays / 2), Math.floor((3 * horizonDays) / 4), horizonDays].map(
+        (d, i) => {
+          const x = xFor(d);
+          return (
+            <SvgText
+              key={i}
+              x={x}
+              y={height - 4}
+              fill={CHART_COLORS.textSubtle}
+              fontSize={6}
+              textAnchor="middle"
+            >
+              {`d${d}`}
+            </SvgText>
+          );
+        }
+      )}
+    </Svg>
+  );
+}
+
+// =========================================================================
 // Asset class donut + legend dots
 // =========================================================================
 

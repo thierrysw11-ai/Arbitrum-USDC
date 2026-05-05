@@ -1,57 +1,164 @@
 'use client';
 
-import React from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { useAccount } from 'wagmi';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Eye, X } from 'lucide-react';
 import AaveRiskGauge from '@/components/AaveRiskGauge';
 import AaveMarketsOverview from '@/components/AaveMarketsOverview';
 import LiquidityFlow from '@/components/LiquidityFlow';
-import WhaleFeed from '@/components/WhaleFeed';
+import LiquidationFeed from '@/components/LiquidationFeed';
 import GlassCard from '@/components/GlassCard';
 import { PremiumAnalysisButton } from '@/components/PremiumAnalysisButton';
 
+/**
+ * Sanity check on a hex address. Strict 40-hex-char check; we don't
+ * resolve ENS here (that would need a separate hook + RPC call).
+ */
+function isValidAddress(s: string | null | undefined): s is `0x${string}` {
+  return !!s && /^0x[a-fA-F0-9]{40}$/.test(s);
+}
+
+/** A handful of well-known wallets to make demo / sales work easy. */
+const PRESET_WALLETS: Array<{ label: string; address: `0x${string}` }> = [
+  { label: 'vitalik.eth', address: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' },
+  { label: 'a16z', address: '0x05E793cE0C6027323Ac150F6d45C2344d28B6019' },
+];
+
+/**
+ * Top-level export wraps the body in Suspense — required by Next.js 14
+ * App Router for `useSearchParams()`. Without it, the URL-driven spectator
+ * mode causes a hydration mismatch (server renders without the param,
+ * client immediately knows it). Suspense lets Next.js handle the
+ * client-side render boundary cleanly.
+ */
 export default function SentinelPortfolioPage() {
+  return (
+    <Suspense fallback={<PortfolioPageSkeleton />}>
+      <SentinelPortfolioPageInner />
+    </Suspense>
+  );
+}
+
+function PortfolioPageSkeleton() {
+  return (
+    <div className="min-h-screen bg-[#050505] text-zinc-100">
+      <main className="max-w-7xl mx-auto px-6 py-10">
+        <div className="h-72 rounded-[2.5rem] border border-white/5 bg-gradient-to-b from-zinc-900 to-black animate-pulse" />
+      </main>
+    </div>
+  );
+}
+
+function SentinelPortfolioPageInner() {
   const { isConnected } = useAccount();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // wagmi's connection state differs between server (always false) and
+  // client (true once WalletConnect resolves). Gate any UI that reads
+  // `isConnected` behind this `mounted` flag so the first paint always
+  // matches the server-rendered HTML.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  const safeIsConnected = mounted && isConnected;
+
+  // ?as=0x… in the URL is the source of truth. Local input + presets just
+  // push to the URL via router.replace so links remain shareable.
+  const asParam = searchParams.get('as');
+  const viewAddress = isValidAddress(asParam) ? asParam : undefined;
+
+  const setViewAddress = (next: `0x${string}` | null) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next) params.set('as', next);
+    else params.delete('as');
+    const qs = params.toString();
+    router.replace(qs ? `/portfolio?${qs}` : '/portfolio', { scroll: false });
+  };
 
   return (
     <div className="min-h-screen bg-[#050505] text-zinc-100">
       <main className="max-w-7xl mx-auto px-6 py-10 space-y-12">
-        
-        {/* SECTION 1: HERO & PREMIUM ACCESS — re-aligned to the new
-            "wealth-manager-grade DeFi reports" positioning. The Run-
-            analysis button on the right is the conversion target. */}
+
+        {/* SPECTATOR BANNER — only when ?as= is set. Compact, dismissible
+            via the X. Visually distinct so the user never forgets they're
+            looking at someone else's wallet. */}
+        {viewAddress && (
+          <div className="flex items-center gap-3 px-4 py-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-200">
+            <Eye size={16} className="flex-shrink-0" />
+            <p className="text-sm flex-1">
+              <span className="font-bold">Spectator mode</span> — analyzing{' '}
+              <code className="font-mono text-amber-100">
+                {viewAddress.slice(0, 6)}…{viewAddress.slice(-4)}
+              </code>
+              . Reads on this page target this address; if you run the paid
+              analysis, you pay 0.01 USDC from your own connected wallet.
+            </p>
+            <button
+              onClick={() => setViewAddress(null)}
+              className="text-amber-300 hover:text-amber-100 transition-colors"
+              aria-label="Exit spectator mode"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
+
+        {/* SECTION 1: HERO & PREMIUM ACCESS */}
         <section className="relative overflow-hidden rounded-[2.5rem] border border-white/5 bg-gradient-to-b from-zinc-900 to-black p-8 md:p-12 shadow-2xl">
           <div className="relative z-10 flex flex-col lg:flex-row items-start justify-between gap-12">
             <div className="max-w-2xl space-y-6">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase tracking-widest">
-                {isConnected
-                  ? 'Wallet connected · ready to generate'
-                  : 'Free preview · no signup'}
+                {viewAddress
+                  ? `Viewing as ${viewAddress.slice(0, 6)}…${viewAddress.slice(-4)}`
+                  : safeIsConnected
+                    ? 'Wallet connected · ready to generate'
+                    : 'Free preview · no signup'}
               </div>
 
               <h1 className="text-5xl md:text-7xl font-black tracking-tighter leading-[0.9] uppercase italic">
-                Your DeFi <br />
-                <span className="text-zinc-500">portfolio</span> report.
+                {viewAddress ? (
+                  <>
+                    Their <br />
+                    <span className="text-zinc-500">portfolio</span> report.
+                  </>
+                ) : (
+                  <>
+                    Your DeFi <br />
+                    <span className="text-zinc-500">portfolio</span> report.
+                  </>
+                )}
               </h1>
 
               <p className="text-zinc-400 text-lg leading-relaxed max-w-xl">
                 Sector allocation, concentration risk, Monte Carlo simulation,
                 correlation matrix, action recommendations — across all 5 EVM
-                chains, generated from your live on-chain positions. Free
-                preview below; full report for{' '}
+                chains, generated from{' '}
+                {viewAddress ? "the spectator address's" : 'your'} live on-chain
+                positions. Free preview below; full report for{' '}
                 <span className="font-mono text-zinc-200">5 USDC</span>{' '}
                 settled on-chain via x402.
               </p>
 
-              {!isConnected && (
+              {mounted && !safeIsConnected && !viewAddress && (
                 <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400 text-xs font-bold uppercase tracking-tight">
                   Connect a wallet to populate your free preview
                 </div>
               )}
+
+              {/* "View any wallet" controls — paste an address or pick a
+                  preset. Lives in the hero so it's always discoverable. */}
+              <SpectatorControls
+                current={viewAddress}
+                onChange={setViewAddress}
+              />
             </div>
 
             {/* Primary conversion action — opens the full-report modal */}
             <div className="w-full lg:w-auto self-center lg:self-start">
-              <PremiumAnalysisButton />
+              <PremiumAnalysisButton viewAddress={viewAddress} />
             </div>
           </div>
 
@@ -64,15 +171,6 @@ export default function SentinelPortfolioPage() {
             <GlassCard title="Security Sentinel Analysis">
               <div className="p-2">
                 <AaveRiskGauge />
-                {/*
-                  "Liquidation Point: 1.00 HF" is true universally — Aave V3
-                  liquidates whenever HF crosses 1.00. The companion card was
-                  previously a hardcoded "+14.2%" buffer figure; that's
-                  derivable from the live HF but the formula varies depending
-                  on which collateral is at risk. Removed for now to avoid
-                  showing a fabricated number — the gauge above already
-                  conveys the actual buffer visually.
-                */}
                 <div className="mt-4 grid grid-cols-1 gap-4 text-center">
                   <div className="p-3 bg-white/5 rounded-xl border border-white/5">
                     <p className="text-[10px] text-zinc-500 uppercase font-bold">Liquidation Point</p>
@@ -104,12 +202,86 @@ export default function SentinelPortfolioPage() {
           </div>
 
           <div className="lg:col-span-4">
-            <GlassCard title="Sentinel Whale Watch">
-              <WhaleFeed />
+            <GlassCard title="Liquidation Watch · Aave V3 Arbitrum">
+              <LiquidationFeed />
             </GlassCard>
           </div>
         </div>
       </main>
+    </div>
+  );
+}
+
+// =========================================================================
+// SpectatorControls — paste-an-address input + preset chips
+// =========================================================================
+
+function SpectatorControls({
+  current,
+  onChange,
+}: {
+  current: `0x${string}` | undefined;
+  onChange: (next: `0x${string}` | null) => void;
+}) {
+  const [draft, setDraft] = useState(current ?? '');
+  // Re-sync the input when the URL changes from elsewhere (preset click,
+  // back button, etc).
+  useEffect(() => {
+    setDraft(current ?? '');
+  }, [current]);
+
+  const trimmed = draft.trim();
+  const isValid = useMemo(() => isValidAddress(trimmed), [trimmed]);
+  const isCurrent = trimmed.toLowerCase() === (current ?? '').toLowerCase();
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-col sm:flex-row gap-2 items-stretch">
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="View any wallet — paste a 0x… address"
+          spellCheck={false}
+          className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-zinc-900/80 border border-zinc-800 focus:border-purple-500/50 focus:outline-none text-sm font-mono text-zinc-100 placeholder:text-zinc-600"
+        />
+        <button
+          onClick={() => isValid && !isCurrent && onChange(trimmed as `0x${string}`)}
+          disabled={!isValid || isCurrent}
+          className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-sm font-bold transition-colors whitespace-nowrap"
+        >
+          {isCurrent ? 'Viewing' : 'View'}
+        </button>
+      </div>
+      <div className="flex flex-wrap gap-1.5 items-center">
+        <span className="text-[10px] uppercase tracking-widest text-zinc-600 font-bold mr-1">
+          Try:
+        </span>
+        {PRESET_WALLETS.map((p) => {
+          const active = p.address.toLowerCase() === (current ?? '').toLowerCase();
+          return (
+            <button
+              key={p.address}
+              onClick={() => onChange(p.address)}
+              className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors ${
+                active
+                  ? 'border-purple-500/60 bg-purple-500/10 text-purple-200'
+                  : 'border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              {p.label}
+            </button>
+          );
+        })}
+        {current && (
+          <button
+            onClick={() => onChange(null)}
+            className="text-[11px] px-2.5 py-1 rounded-full border border-zinc-800 hover:border-zinc-700 text-zinc-500 hover:text-zinc-300 ml-1"
+          >
+            Use my wallet
+          </button>
+        )}
+      </div>
     </div>
   );
 }

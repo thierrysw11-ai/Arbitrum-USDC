@@ -45,8 +45,15 @@ interface WalletErc20Token {
   isSpam: boolean;
 }
 
+interface NativeBalance {
+  symbol: string;
+  balanceFormatted: number;
+  usdValue: number | null;
+}
+
 interface ChainHoldings {
   chainSlug: string;
+  nativeBalance: NativeBalance;
   erc20: WalletErc20Token[];
 }
 
@@ -57,23 +64,27 @@ interface WalletHoldingsResponse {
 
 const MAX_ASSETS = 10; // matrix gets unwieldy beyond this
 
-const MARKET_CONTEXT_ASSETS: AssetSpec[] = [
-  {
-    symbol: 'WETH',
-    chainSlug: 'arbitrum-one',
-    contractAddress: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
-  },
-  {
-    symbol: 'WBTC',
-    chainSlug: 'arbitrum-one',
-    contractAddress: '0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f',
-  },
-  {
-    symbol: 'ARB',
-    chainSlug: 'arbitrum-one',
-    contractAddress: '0x912CE59144191C1204E64559FE8253a0e49E6548',
-  },
-];
+// WETH addresses per chain — used so native ETH balances borrow vol from
+// WETH price history (native ETH has no contract address, so asset-momentum
+// can't query it directly; WETH tracks ETH 1:1).
+const WETH_BY_CHAIN: Record<string, string> = {
+  'ethereum-mainnet': '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+  'arbitrum-one': '0x82af49447d8a07e3bd95bd0d56f35241523fbab1',
+  base: '0x4200000000000000000000000000000000000006',
+  optimism: '0x4200000000000000000000000000000000000006',
+  polygon: '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619',
+};
+
+// BTC benchmark — WBTC on Arbitrum. Always added to the matrix unless
+// the user already holds a BTC variant, so portfolios get at least one
+// reference point for correlation. (BTC is the standard market benchmark
+// in crypto, equivalent to S&P 500 in TradFi.)
+const BTC_BENCHMARK: AssetSpec = {
+  symbol: 'WBTC (benchmark)',
+  chainSlug: 'arbitrum-one',
+  contractAddress: '0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f',
+};
+const BTC_FAMILY_SYMBOLS = new Set(['BTC', 'WBTC', 'CBBTC', 'TBTC', 'WBTC.E']);
 
 // =========================================================================
 // Pearson correlation helpers
@@ -152,20 +163,49 @@ export function AssetCorrelationPanel({
   const [isLoading, setIsLoading] = useState(true);
   const [discoveredAssets, setDiscoveredAssets] = useState<AssetSpec[]>([]);
 
-  // Asset discovery (mirrors AssetMomentumPanel — same logic, deliberately
-  // duplicated so each panel stays standalone).
+  // Asset discovery — dedupes by SYMBOL (so multi-chain ETH = one row),
+  // picks the largest USD entry per symbol as the price-history source,
+  // includes native balances (routed through WETH for price history since
+  // native ETH has no contract address), and always adds WBTC as a
+  // benchmark unless the user already holds a BTC variant.
   useEffect(() => {
     let cancelled = false;
-    const fromPositions: AssetSpec[] = positions
-      .filter((p) => p.aTokenBalance > 0n || p.variableDebtBalance > 0n)
-      .map((p) => ({
-        symbol: p.symbol,
-        chainSlug: 'arbitrum-one',
-        contractAddress: p.asset,
-      }));
 
     (async () => {
-      let fromWallet: Array<AssetSpec & { usdValue: number }> = [];
+      // Symbol → best AssetSpec (by USD value). The "best" entry is the
+      // one whose price history we'll fetch; for the same logical asset
+      // any chain's price history is fine since they track each other.
+      const bySymbol = new Map<
+        string,
+        AssetSpec & { usdValue: number }
+      >();
+      const consider = (spec: AssetSpec, usdValue: number) => {
+        const sym = spec.symbol.toUpperCase();
+        const existing = bySymbol.get(sym);
+        if (!existing || usdValue > existing.usdValue) {
+          bySymbol.set(sym, { ...spec, usdValue });
+        }
+      };
+
+      // 1. Aave positions (Arbitrum) — represent active risk, ALWAYS
+      // include even if the wallet section also has them.
+      for (const p of positions) {
+        if (p.aTokenBalance > 0n || p.variableDebtBalance > 0n) {
+          consider(
+            {
+              symbol: p.symbol,
+              chainSlug: 'arbitrum-one',
+              contractAddress: p.asset,
+            },
+            // Unknown USD here — composition uses absolute, but for
+            // ranking we treat Aave positions as priority by giving them
+            // a small floor so they survive over zero-value entries.
+            1
+          );
+        }
+      }
+
+      // 2. Wallet holdings — natives + ERC-20s.
       if (walletAddress) {
         try {
           const res = await fetch('/api/wallet-holdings', {
@@ -176,39 +216,67 @@ export function AssetCorrelationPanel({
           const json = (await res.json()) as WalletHoldingsResponse;
           if (res.ok && !json.error) {
             for (const chain of json.chains) {
+              const native = chain.nativeBalance;
+              if (
+                native?.usdValue &&
+                native.usdValue > 0 &&
+                native.balanceFormatted > 0
+              ) {
+                // Native ETH has no contract — point it at WETH on the
+                // same chain so asset-momentum can fetch price history.
+                const wethAddr = WETH_BY_CHAIN[chain.chainSlug];
+                if (wethAddr) {
+                  consider(
+                    {
+                      symbol: native.symbol,
+                      chainSlug: chain.chainSlug,
+                      contractAddress: wethAddr,
+                    },
+                    native.usdValue
+                  );
+                }
+              }
               for (const t of chain.erc20) {
                 if (t.isSpam) continue;
                 if (t.priceUsd === null) continue;
                 if ((t.usdValue ?? 0) < 1) continue;
-                fromWallet.push({
-                  chainSlug: chain.chainSlug,
-                  contractAddress: t.contract,
-                  symbol: t.symbol,
-                  usdValue: t.usdValue ?? 0,
-                });
+                consider(
+                  {
+                    chainSlug: chain.chainSlug,
+                    contractAddress: t.contract,
+                    symbol: t.symbol,
+                  },
+                  t.usdValue ?? 0
+                );
               }
             }
-            fromWallet.sort((a, b) => b.usdValue - a.usdValue);
           }
         } catch {
-          // ignore — fall back to positions + market context
+          // soft-fail — proceed with whatever we collected so far
         }
       }
 
-      const seen = new Set<string>();
-      const merged: AssetSpec[] = [];
-      const push = (a: AssetSpec) => {
-        const key = `${a.chainSlug}:${a.contractAddress.toLowerCase()}`;
-        if (seen.has(key)) return;
-        seen.add(key);
-        merged.push(a);
-      };
-      for (const a of fromPositions) push(a);
-      for (const a of fromWallet) push(a);
-      for (const a of MARKET_CONTEXT_ASSETS) push(a);
+      // 3. Always include BTC as benchmark, unless already held.
+      const heldBtc = [...bySymbol.keys()].some((sym) =>
+        BTC_FAMILY_SYMBOLS.has(sym)
+      );
+      if (!heldBtc) {
+        bySymbol.set('WBTC_BENCHMARK', { ...BTC_BENCHMARK, usdValue: 0 });
+      }
+
+      // 4. Sort by USD value descending (so largest holdings dominate
+      // the top of the matrix), cap at MAX_ASSETS.
+      const sorted = [...bySymbol.values()].sort(
+        (a, b) => b.usdValue - a.usdValue
+      );
+      const merged: AssetSpec[] = sorted.slice(0, MAX_ASSETS).map((entry) => ({
+        symbol: entry.symbol,
+        chainSlug: entry.chainSlug,
+        contractAddress: entry.contractAddress,
+      }));
 
       if (cancelled) return;
-      setDiscoveredAssets(merged.slice(0, MAX_ASSETS));
+      setDiscoveredAssets(merged);
     })();
 
     return () => {

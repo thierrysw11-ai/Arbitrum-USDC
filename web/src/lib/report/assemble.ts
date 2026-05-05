@@ -31,6 +31,7 @@ import type {
   ReportMeta,
   ReportMonteCarloSection,
   ReportNarrativeSection,
+  ReportPortfolioMcSection,
   ReportSamplePath,
   ReportShockResult,
   ReportWalletChain,
@@ -339,6 +340,81 @@ function interpret(
 }
 
 // =========================================================================
+// Portfolio-mode Monte Carlo section
+// =========================================================================
+
+// Mirror of the wire shape from /api/agent/portfolio-monte-carlo —
+// duplicated narrowly so this module doesn't import the engine type
+// (engine lives under lib/portfolio, this file is generic).
+interface PortfolioMcWire {
+  simulation: {
+    config: {
+      paths: number;
+      horizonDays: number;
+      assetsAnalyzed: string[];
+      assetsSkipped: string[];
+      totalUsdSkipped: number;
+    };
+    initialPortfolioUsd: number;
+    percentiles: {
+      p5: number;
+      p25: number;
+      p50: number;
+      p75: number;
+      p95: number;
+    };
+    expectedTerminalUsd: number;
+    pLossGte: { p10: number; p20: number; p30: number; p50: number };
+    var95Pct: number;
+    cvar95Pct: number;
+    maxDrawdown: { p50Pct: number; p95Pct: number };
+    histogram: { bins: number[]; counts: number[] };
+    samplePaths: Array<{
+      pathId: number;
+      daily: number[];
+      terminal: number;
+      breachedDrawdown: boolean;
+    }>;
+    riskAdjusted: {
+      sharpeRatio: number;
+      annualizedReturnMean: number;
+      annualizedReturnVolatility: number;
+      riskFreeRateAnnual: number;
+    };
+    interpretation: ReportPortfolioMcSection['interpretation'];
+    quant: ReportPortfolioMcSection['quant'];
+  };
+}
+
+export function assemblePortfolioMcSection(
+  wire: PortfolioMcWire
+): ReportPortfolioMcSection {
+  const sim = wire.simulation;
+  return {
+    paths: sim.config.paths,
+    horizonDays: sim.config.horizonDays,
+    initialPortfolioUsd: sim.initialPortfolioUsd,
+    percentiles: { ...sim.percentiles },
+    expectedTerminalUsd: sim.expectedTerminalUsd,
+    pLossGte: { ...sim.pLossGte },
+    var95Pct: sim.var95Pct,
+    cvar95Pct: sim.cvar95Pct,
+    maxDrawdown: { ...sim.maxDrawdown },
+    histogram: sim.histogram,
+    samplePaths: sim.samplePaths.map((p) => ({
+      daily: p.daily,
+      breachedDrawdown: p.breachedDrawdown,
+    })),
+    riskAdjusted: { ...sim.riskAdjusted },
+    interpretation: sim.interpretation,
+    assetsAnalyzed: sim.config.assetsAnalyzed,
+    assetsSkipped: sim.config.assetsSkipped,
+    totalUsdSkipped: sim.config.totalUsdSkipped,
+    quant: sim.quant,
+  };
+}
+
+// =========================================================================
 // Composition + Wallet sections — both fed by /api/wallet-holdings
 // =========================================================================
 
@@ -590,6 +666,7 @@ export function assembleReport(args: {
   meta: ReportMeta;
   aave: ReportAaveSection | null;
   monteCarlo: ReportMonteCarloSection | null;
+  portfolioMc: ReportPortfolioMcSection | null;
   composition: ReportCompositionSection | null;
   correlation: ReportCorrelationSection | null;
   wallet: ReportWalletSection | null;
@@ -599,6 +676,7 @@ export function assembleReport(args: {
     meta: args.meta,
     aave: args.aave,
     monteCarlo: args.monteCarlo,
+    portfolioMc: args.portfolioMc,
     composition: args.composition,
     correlation: args.correlation,
     wallet: args.wallet,

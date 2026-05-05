@@ -124,6 +124,80 @@ export interface ReportCompositionSection {
   xrayApplied: boolean;
 }
 
+/**
+ * Portfolio-mode Monte Carlo — drawdown / VaR for the wider wallet.
+ * Sibling of ReportMonteCarloSection (which is Aave-leverage-specific).
+ */
+export interface ReportPortfolioMcSection {
+  paths: number;
+  horizonDays: number;
+  initialPortfolioUsd: number;
+  /** Quantiles of TERMINAL portfolio USD value at day = horizonDays. */
+  percentiles: { p5: number; p25: number; p50: number; p75: number; p95: number };
+  expectedTerminalUsd: number;
+  /** Probability the portfolio loses at least X% by horizon. */
+  pLossGte: { p10: number; p20: number; p30: number; p50: number };
+  /** 95% VaR as a positive % loss. */
+  var95Pct: number;
+  /** Expected Shortfall — average loss in worst 5%. */
+  cvar95Pct: number;
+  /** Median + 95th percentile peak-to-trough drawdown across paths. */
+  maxDrawdown: { p50Pct: number; p95Pct: number };
+  /** Histogram of terminal values for the chart. */
+  histogram: { bins: number[]; counts: number[] };
+  /** Sample paths — daily portfolio USD values. */
+  samplePaths: Array<{ daily: number[]; breachedDrawdown: boolean }>;
+  /** Risk-adjusted return — same shape as Aave MC for PDF parity. */
+  riskAdjusted: {
+    sharpeRatio: number;
+    annualizedReturnMean: number;
+    annualizedReturnVolatility: number;
+    riskFreeRateAnnual: number;
+  };
+  /** Plain-English interpretation. */
+  interpretation: {
+    level: 'safe' | 'caution' | 'risky' | 'critical';
+    headline: string;
+    details: string[];
+    recommendation: string;
+  };
+  /** Symbols of the assets the engine actually modeled. */
+  assetsAnalyzed: string[];
+  assetsSkipped: string[];
+  totalUsdSkipped: number;
+
+  /**
+   * Wealth-manager quant metrics — variance, downside dev, Sortino,
+   * skew, kurtosis, VaR99/CVaR99, plus benchmark-relative Beta /
+   * Jensen's Alpha / Treynor / Information Ratio. The benchmark sub-block
+   * is null when no benchmark price history was supplied.
+   */
+  quant: {
+    meanReturnAnnual: number;
+    varianceAnnual: number;
+    stddevAnnual: number;
+    skewness: number;
+    excessKurtosis: number;
+    downsideDeviationAnnual: number;
+    sortinoRatio: number;
+    var95Pct: number;
+    var99Pct: number;
+    cvar95Pct: number;
+    cvar99Pct: number;
+    realizedMeanAnnual: number;
+    realizedStddevAnnual: number;
+    benchmark: {
+      symbol: string;
+      beta: number;
+      jensenAlphaAnnual: number;
+      treynorRatio: number;
+      informationRatio: number;
+      correlation: number;
+      rSquared: number;
+    } | null;
+  };
+}
+
 export interface ReportCorrelationSection {
   /** Asset symbols in the order they appear on the matrix. */
   symbols: string[];
@@ -171,8 +245,10 @@ export interface ReportData {
   meta: ReportMeta;
   /** Aave V3 risk profile. Null if no active position. */
   aave: ReportAaveSection | null;
-  /** Monte Carlo result. Null if user didn't run premium analysis. */
+  /** Aave-specific Monte Carlo result. Null if user didn't run it. */
   monteCarlo: ReportMonteCarloSection | null;
+  /** Portfolio-mode (drawdown / VaR) Monte Carlo. Null if user didn't run it. */
+  portfolioMc: ReportPortfolioMcSection | null;
   /** Composition analysis. Null if wallet scan unavailable. */
   composition: ReportCompositionSection | null;
   /** Asset correlation matrix. Null if insufficient price history. */

@@ -31,17 +31,23 @@ import { usePortfolio } from '@/lib/aave/usePortfolio';
 import {
   assembleAaveSection,
   assembleMonteCarloSection,
+  assemblePortfolioMcSection,
 } from '@/lib/report/assemble';
 import {
   SentinelAnalysisVisuals,
   WalletHoldingsPanel,
 } from './SentinelAnalysisVisuals';
 import { MonteCarloPanel, type MonteCarloResponse } from './MonteCarloPanel';
+import {
+  PortfolioMonteCarloPanel,
+  type PortfolioMonteCarloResponse,
+} from './PortfolioMonteCarloPanel';
 import { AssetMomentumPanel } from './AssetMomentumPanel';
 import { PortfolioCompositionPanel } from './PortfolioCompositionPanel';
 import { AssetCorrelationPanel } from './AssetCorrelationPanel';
 import { EtherfiInsightsPanel } from './EtherfiInsightsPanel';
 import { DownloadReportButton } from './DownloadReportButton';
+import { ManualBtcInput, type ManualHolding } from './ManualBtcInput';
 
 interface AssistantBlock {
   type: 'text' | 'tool_use';
@@ -105,8 +111,26 @@ function TabNav({
   );
 }
 
-export function PremiumAnalysisButton() {
-  const { address, isConnected } = useAccount();
+interface PremiumAnalysisButtonProps {
+  /**
+   * Optional spectator-mode override. When set, every read (Aave position,
+   * wallet holdings, Monte Carlo, AI narrative) targets THIS address instead
+   * of the connected wallet — perfect for generating demo PDFs against any
+   * public address (vitalik.eth etc.). The connected wallet remains the
+   * x402 payer / signer.
+   */
+  viewAddress?: `0x${string}`;
+}
+
+export function PremiumAnalysisButton({
+  viewAddress,
+}: PremiumAnalysisButtonProps = {}) {
+  const { address: connectedAddress, isConnected } = useAccount();
+  // The "subject" — wallet being analyzed. Override beats connected wallet.
+  // Connected wallet is still required for paying the x402 fee on Premium.
+  const subjectAddress = viewAddress ?? connectedAddress;
+  const isSpectator = !!viewAddress;
+
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [analysis, setAnalysis] = useState<string | null>(null);
@@ -118,14 +142,31 @@ export function PremiumAnalysisButton() {
     data: MonteCarloResponse;
     payment: { txHash?: string; network?: string } | null;
   } | null>(null);
+  // Portfolio-mode MC result (drawdown / VaR for non-Aave wallets, or
+  // alongside Aave MC for borrowers).
+  const [portfolioMcResult, setPortfolioMcResult] = useState<{
+    data: PortfolioMonteCarloResponse;
+    payment: { txHash?: string; network?: string } | null;
+  } | null>(null);
+  // Manual off-EVM BTC declared by the user. Folded into the Portfolio MC
+  // simulation so the analysis covers the user's full crypto exposure.
+  const [manualBtc, setManualBtc] = useState<ManualHolding | null>(null);
 
-  // Pull the live portfolio whenever the modal is open. The hook honors the
-  // currently-connected chain (post-Phase-A sub-task 6), so visuals reflect
-  // whichever chain the wallet is on.
-  const portfolio = usePortfolio(undefined, undefined);
+  // Pull the live portfolio for whichever address we're inspecting. In
+  // spectator mode the chain still defaults to whatever the user is on,
+  // but we read THAT address's position instead of the connected wallet's.
+  const portfolio = usePortfolio(subjectAddress, undefined);
 
   const runAnalysis = async () => {
-    if (!address || !isConnected) {
+    if (!subjectAddress) {
+      setError(
+        isSpectator
+          ? 'No spectator address set'
+          : 'Please connect your wallet first'
+      );
+      return;
+    }
+    if (!isSpectator && !isConnected) {
       setError('Please connect your wallet first');
       return;
     }
@@ -135,32 +176,55 @@ export function PremiumAnalysisButton() {
     setAnalysis(null);
 
     try {
-      const prompt = [
-        `Run a complete Sentinel Elite Risk Assessment for my Aave V3 position at ${address}.`,
-        ``,
-        `Use these tools in sequence:`,
-        `1. get_portfolio({ address: "${address}" }) — read live HF, collateral, debt, per-asset breakdown`,
-        `2. simulate_price_shock({ address: "${address}", asset: "ALL_NON_STABLE", pctChange: -30 })`,
-        `3. simulate_price_shock({ address: "${address}", asset: "ALL_NON_STABLE", pctChange: -50 })`,
-        `4. get_wallet_holdings({ address: "${address}", chain: "arbitrum-one" }) — full ERC-20 scan beyond Aave`,
-        ``,
-        `Then write a structured assessment with these sections:`,
-        `**Current Position** — HF, total collateral USD, total debt USD, weighted liquidation threshold`,
-        `**Per-Asset Breakdown** — supplied, borrowed, USD value, liq price for each asset`,
-        `**-30% Market Shock** — resulting HF, change, whether liquidatable`,
-        `**-50% Stress Test** — resulting HF, change, whether liquidatable`,
-        `**Wider Wallet** — what else you hold (flag any unfamiliar tokens as possible spam)`,
-        `**Recommended Action Category** — describe the type of action without naming specific trades`,
-        ``,
-        `Be specific with numbers. Quote actual values, not "moderate risk".`,
-      ].join('\n');
+      // Branch the agent prompt based on whether the wallet has an active
+      // Aave V3 position. With Aave → leverage / liquidation framing.
+      // Without Aave → wealth-manager-style portfolio review.
+      const hasAavePosition = visualsReady;
+      const prompt = hasAavePosition
+        ? [
+            `Run a complete Sentinel Elite Risk Assessment for the Aave V3 position at ${subjectAddress}.`,
+            ``,
+            `Use these tools in sequence:`,
+            `1. get_portfolio({ address: "${subjectAddress}" }) — read live HF, collateral, debt, per-asset breakdown`,
+            `2. simulate_price_shock({ address: "${subjectAddress}", asset: "ALL_NON_STABLE", pctChange: -30 })`,
+            `3. simulate_price_shock({ address: "${subjectAddress}", asset: "ALL_NON_STABLE", pctChange: -50 })`,
+            `4. get_wallet_holdings({ address: "${subjectAddress}", chain: "arbitrum-one" }) — full ERC-20 scan beyond Aave`,
+            ``,
+            `Then write a structured assessment with these sections:`,
+            `**Current Position** — HF, total collateral USD, total debt USD, weighted liquidation threshold`,
+            `**Per-Asset Breakdown** — supplied, borrowed, USD value, liq price for each asset`,
+            `**-30% Market Shock** — resulting HF, change, whether liquidatable`,
+            `**-50% Stress Test** — resulting HF, change, whether liquidatable`,
+            `**Wider Wallet** — what else you hold (flag any unfamiliar tokens as possible spam)`,
+            `**Recommended Action Category** — describe the type of action without naming specific trades`,
+            ``,
+            `Be specific with numbers. Quote actual values, not "moderate risk".`,
+          ].join('\n')
+        : [
+            `Run a wealth-manager-style portfolio review for the wallet at ${subjectAddress}.`,
+            `This wallet has NO active Aave V3 leveraged position — focus on the holdings themselves: composition, concentration, asset class mix, and downside risk.`,
+            ``,
+            `Use these tools:`,
+            `1. get_wallet_holdings({ address: "${subjectAddress}", chain: "arbitrum-one" }) — multi-chain ERC-20 scan`,
+            `2. simulate_price_shock({ address: "${subjectAddress}", asset: "ALL_NON_STABLE", pctChange: -30 }) — synthetic stress on the held assets`,
+            ``,
+            `Then write a structured assessment with these sections:`,
+            `**Portfolio Snapshot** — total USD value, asset count, chain breakdown, net stablecoin vs. volatile mix`,
+            `**Top Holdings** — name and quantify the 5 largest positions in USD, with their share of the portfolio`,
+            `**Concentration & Diversification** — is the portfolio top-heavy? Effective number of positions? Any single token > 30% of net worth?`,
+            `**Asset Class Mix** — % in stablecoins / smart-contract platforms / Bitcoin variants / liquid staking / DeFi / other. Flag if heavily concentrated in one super-sector.`,
+            `**Downside Risk** — under a -30% shock to all non-stable assets, what's the portfolio worth? What's the implied tail risk?`,
+            `**Recommended Action Category** — diversification adjustments, rebalancing, hedging, or "no action needed". Don't name specific trades.`,
+            ``,
+            `Be specific with numbers. Quote actual values, not "moderate risk". Treat this as a TradFi-style portfolio review for someone who happens to hold crypto — not a DeFi degen postmortem.`,
+          ].join('\n');
 
       const response = await fetch('/api/agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [{ role: 'user', content: prompt }],
-          activeAddress: address.toLowerCase(),
+          activeAddress: subjectAddress.toLowerCase(),
         }),
       });
 
@@ -233,15 +297,24 @@ export function PremiumAnalysisButton() {
             <div className="p-8 border-b border-zinc-800 flex justify-between items-start flex-shrink-0">
               <div>
                 <div className="uppercase tracking-widest text-xs text-purple-400 font-bold mb-1">
-                  SYSTEM INTELLIGENCE ACTIVE
+                  {isSpectator ? 'SPECTATOR MODE · ANALYZING' : 'SYSTEM INTELLIGENCE ACTIVE'}
                 </div>
                 <h2 className="text-3xl md:text-4xl font-black tracking-tighter">
                   SENTINEL ELITE ANALYSIS
                 </h2>
                 <p className="text-zinc-400 mt-2 text-sm">
-                  Real-time risk modeling for your Aave V3 position
+                  Real-time risk modeling for{' '}
+                  {isSpectator
+                    ? `${subjectAddress?.slice(0, 6)}…${subjectAddress?.slice(-4)}'s Aave V3 position`
+                    : 'your Aave V3 position'}
                   {portfolio.chainName ? ` on ${portfolio.chainName}` : ''}.
                 </p>
+                {isSpectator && (
+                  <p className="text-amber-300/80 mt-1 text-[11px]">
+                    You'll pay the 0.01 USDC for Premium from your connected wallet — the
+                    simulation runs against the spectator address.
+                  </p>
+                )}
               </div>
               <button
                 onClick={closeAndReset}
@@ -254,7 +327,7 @@ export function PremiumAnalysisButton() {
 
             {/* Body — scrollable */}
             <div className="p-6 md:p-8 overflow-y-auto flex-1">
-              {!isConnected ? (
+              {!subjectAddress ? (
                 <div className="bg-zinc-900/50 border border-white/5 rounded-2xl p-12 text-center">
                   <Shield className="w-16 h-16 text-purple-400 mx-auto mb-4" />
                   <p className="text-zinc-300 text-lg font-semibold mb-1">
@@ -280,10 +353,10 @@ export function PremiumAnalysisButton() {
                   {/* WALLET TAB — multi-chain holdings (always renders, even
                       without an Aave position) + ether.fi protocol insights
                       from the user's published subgraphs. */}
-                  {activeTab === 'wallet' && address && (
+                  {activeTab === 'wallet' && (
                     <>
-                      <WalletHoldingsPanel address={address} />
-                      <EtherfiInsightsPanel walletAddress={address} />
+                      <WalletHoldingsPanel address={subjectAddress} />
+                      <EtherfiInsightsPanel walletAddress={subjectAddress} />
                     </>
                   )}
 
@@ -291,7 +364,7 @@ export function PremiumAnalysisButton() {
                   {activeTab === 'momentum' && (
                     <AssetMomentumPanel
                       positions={portfolio.positions}
-                      walletAddress={address}
+                      walletAddress={subjectAddress}
                     />
                   )}
 
@@ -306,38 +379,67 @@ export function PremiumAnalysisButton() {
                       the user paid for. */}
                   {activeTab === 'premium' && (
                     <>
-                      <MonteCarloPanel
-                        hasPosition={visualsReady}
-                        onResult={setMonteCarloResult}
+                      {/* Manual BTC input — augments the EVM wallet scan with
+                          off-chain BTC so the simulation covers the user's
+                          full crypto exposure. */}
+                      <ManualBtcInput value={manualBtc} onChange={setManualBtc} />
+
+                      {/* Portfolio Drawdown Monte Carlo — works for any wallet,
+                          no Aave position required. Always shown. */}
+                      <PortfolioMonteCarloPanel
+                        subjectAddress={subjectAddress}
+                        onResult={setPortfolioMcResult}
+                        manualHoldings={manualBtc ? [manualBtc] : undefined}
                       />
-                      {address && (
-                        <>
-                          <PortfolioCompositionPanel walletAddress={address} />
-                          <AssetCorrelationPanel
-                            positions={portfolio.positions}
-                            walletAddress={address}
-                          />
-                          {monteCarloResult && (
-                            <DownloadReportButton
-                              walletAddress={address}
-                              aave={assembleAaveSection(
-                                portfolio,
-                                portfolio.chainName
-                              )}
-                              monteCarlo={assembleMonteCarloSection(
-                                monteCarloResult.data
-                              )}
-                              payment={monteCarloResult.payment}
-                              positions={portfolio.positions}
-                              aiNarrative={analysis}
-                            />
-                          )}
-                        </>
+                      {/* Aave-specific Monte Carlo — only meaningful when the
+                          wallet has an active Aave V3 position. */}
+                      {visualsReady && (
+                        <MonteCarloPanel
+                          hasPosition={visualsReady}
+                          onResult={setMonteCarloResult}
+                          subjectAddress={subjectAddress}
+                        />
                       )}
+                      <PortfolioCompositionPanel walletAddress={subjectAddress} />
+                      <AssetCorrelationPanel
+                        positions={portfolio.positions}
+                        walletAddress={subjectAddress}
+                      />
+                      {/* PDF download is always available in the Premium tab.
+                          The generator handles missing sections gracefully —
+                          if MC didn't run, those pages are skipped but the
+                          composition / correlation / wallet pages still ship. */}
+                      <DownloadReportButton
+                        walletAddress={subjectAddress}
+                        aave={assembleAaveSection(
+                          portfolio,
+                          portfolio.chainName
+                        )}
+                        monteCarlo={
+                          monteCarloResult
+                            ? assembleMonteCarloSection(monteCarloResult.data)
+                            : null
+                        }
+                        portfolioMc={
+                          portfolioMcResult
+                            ? assemblePortfolioMcSection(portfolioMcResult.data)
+                            : null
+                        }
+                        payment={
+                          monteCarloResult?.payment ??
+                          portfolioMcResult?.payment ??
+                          null
+                        }
+                        positions={portfolio.positions}
+                        aiNarrative={analysis}
+                      />
                     </>
                   )}
 
-                  {/* AI NARRATIVE TAB */}
+                  {/* AI NARRATIVE TAB — works for any wallet. The prompt
+                      branches on whether there's an active Aave position
+                      (leverage/liquidation framing) or not (wealth-manager
+                      portfolio review). */}
                   {activeTab === 'ai' && (
                     <AINarrativeTab
                       analysis={analysis}
@@ -348,7 +450,7 @@ export function PremiumAnalysisButton() {
                         reset();
                         runAnalysis();
                       }}
-                      visualsReady={visualsReady}
+                      hasAavePosition={visualsReady}
                     />
                   )}
                 </>
@@ -371,34 +473,28 @@ function AINarrativeTab({
   isLoading,
   onRun,
   onRetry,
-  visualsReady,
+  hasAavePosition,
 }: {
   analysis: string | null;
   error: string | null;
   isLoading: boolean;
   onRun: () => void;
   onRetry: () => void;
-  visualsReady: boolean;
+  hasAavePosition: boolean;
 }) {
-  if (!visualsReady) {
-    return (
-      <div className="bg-zinc-900/50 border border-white/5 rounded-2xl p-8 text-center text-zinc-500 text-sm">
-        AI narrative needs an active Aave V3 position to analyze. Connect a
-        wallet with a position, or open the Risk Profile tab to see what's
-        currently being read.
-      </div>
-    );
-  }
-
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[300px] text-center">
         <Loader2 className="w-10 h-10 text-purple-400 mb-4 animate-spin" />
         <p className="text-zinc-300 font-semibold">
-          Reading position from Aave V3 Pool…
+          {hasAavePosition
+            ? 'Reading position from Aave V3 Pool…'
+            : 'Scanning multi-chain wallet holdings…'}
         </p>
         <p className="text-zinc-500 text-sm mt-1">
-          Running shock simulations and wallet scan
+          {hasAavePosition
+            ? 'Running shock simulations and wallet scan'
+            : 'Composing TradFi-style portfolio review'}
         </p>
       </div>
     );
@@ -431,8 +527,9 @@ function AINarrativeTab({
           <Zap className="w-5 h-5" />
         </button>
         <p className="text-zinc-500 text-xs mt-3 max-w-md mx-auto">
-          Sentinel will run get_portfolio, two price-shock simulations, and a
-          full wallet scan, then write a multi-section risk assessment.
+          {hasAavePosition
+            ? 'Sentinel will read your Aave position, run two price-shock simulations, scan your wallet, then write a multi-section risk assessment.'
+            : 'Sentinel will scan the wallet across 5 chains, run a stress shock, then write a wealth-manager-style portfolio review covering composition, concentration, and downside risk.'}
         </p>
       </div>
     );

@@ -14,7 +14,7 @@ import {
 import AaveRiskGauge from '@/components/AaveRiskGauge';
 import AaveMarketsOverview from '@/components/AaveMarketsOverview';
 import LiquidityFlow from '@/components/LiquidityFlow';
-import WhaleFeed from '@/components/WhaleFeed';
+import LiquidationFeed from '@/components/LiquidationFeed';
 import GlassCard from '@/components/GlassCard';
 
 /**
@@ -251,8 +251,8 @@ export default function LandingPage() {
               </GlassCard>
             </div>
             <div className="lg:col-span-4">
-              <GlassCard title="Whale Watch · Arbitrum USDC">
-                <WhaleFeed />
+              <GlassCard title="Liquidation Watch · Aave V3 Arbitrum">
+                <LiquidationFeed />
               </GlassCard>
             </div>
           </div>

@@ -28,6 +28,7 @@ import type {
   ReportAaveSection,
   ReportMeta,
   ReportMonteCarloSection,
+  ReportPortfolioMcSection,
 } from '@/lib/report/types';
 import {
   assembleCompositionSection,
@@ -119,8 +120,10 @@ interface Props {
   walletAddress: `0x${string}`;
   /** Pre-assembled Aave section. Null when the wallet has no live position. */
   aave: ReportAaveSection | null;
-  /** The Monte Carlo result the user just paid for. */
-  monteCarlo: ReportMonteCarloSection;
+  /** Aave-mode Monte Carlo result. Null when user only ran portfolio MC. */
+  monteCarlo: ReportMonteCarloSection | null;
+  /** Portfolio-mode (drawdown / VaR) Monte Carlo. Null when user only ran Aave MC. */
+  portfolioMc: ReportPortfolioMcSection | null;
   /** x402 settlement details, if available (shown on the cover page). */
   payment: { txHash?: string; network?: string } | null;
   /** Aave positions — used for correlation asset discovery. */
@@ -136,6 +139,7 @@ export function DownloadReportButton({
   walletAddress,
   aave,
   monteCarlo,
+  portfolioMc,
   payment,
   positions,
   aiNarrative,
@@ -238,6 +242,7 @@ export function DownloadReportButton({
         meta,
         aave,
         monteCarlo,
+        portfolioMc,
         composition,
         correlation,
         wallet,
@@ -279,11 +284,18 @@ export function DownloadReportButton({
       </div>
 
       <p className="text-zinc-300 text-sm mb-4 leading-relaxed">
-        Save the full Sentinel Elite Risk Assessment as a branded PDF — Aave
-        position, Monte Carlo distribution, sector composition, and asset
-        correlation matrix in one document you can email, archive, or feed
-        to another tool.
+        Save the full Sentinel Elite Risk Assessment as a branded PDF —
+        composition, sector breakdown, asset correlation, wallet holdings,
+        and Monte Carlo distribution (when run) in one document you can
+        email, archive, or feed to another tool.
       </p>
+      {!monteCarlo && !portfolioMc && (
+        <div className="text-[11px] text-amber-300/80 bg-amber-500/5 border border-amber-500/20 rounded-lg px-3 py-2 mb-3">
+          Tip — run a Monte Carlo simulation above to include drawdown / VaR
+          pages in the report. The PDF will still ship without them, but the
+          quantitative pages will be missing.
+        </div>
+      )}
 
       {error && (
         <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 text-red-300 rounded-xl p-3 mb-3 text-[12px]">

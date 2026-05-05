@@ -147,11 +147,21 @@ interface Props {
       payment: { txHash?: string; network?: string } | null;
     } | null
   ) => void;
+  /**
+   * Optional spectator-mode override — wallet whose Aave V3 position to
+   * simulate. Defaults to the connected wallet. The CONNECTED wallet is
+   * always the x402 payer regardless of subject.
+   */
+  subjectAddress?: `0x${string}`;
 }
 
-export function MonteCarloPanel({ hasPosition, onResult }: Props) {
+export function MonteCarloPanel({ hasPosition, onResult, subjectAddress }: Props) {
   const { address, isConnected } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
+  // Subject = wallet being analyzed (override or connected). Payer = always
+  // the connected wallet (signs the x402 transferWithAuthorization).
+  const subject = subjectAddress ?? address;
+  const isSpectator = !!subjectAddress && subjectAddress !== address;
 
   const [data, setData] = useState<MonteCarloResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -166,6 +176,10 @@ export function MonteCarloPanel({ hasPosition, onResult }: Props) {
       setError('Connect a wallet first.');
       return;
     }
+    if (!subject) {
+      setError('No subject address to simulate.');
+      return;
+    }
     setIsLoading(true);
     setError(null);
     setData(null);
@@ -178,7 +192,10 @@ export function MonteCarloPanel({ hasPosition, onResult }: Props) {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ address: address.toLowerCase() }),
+          // The subject is who we're simulating. The payer (set below)
+          // is always the connected wallet — that's who signs the
+          // x402 EIP-3009 authorization.
+          body: JSON.stringify({ address: subject.toLowerCase() }),
         },
         {
           payerAddress: address,
@@ -251,6 +268,15 @@ export function MonteCarloPanel({ hasPosition, onResult }: Props) {
           <h3 className="text-xl font-bold mb-2">
             Probabilistic Risk: Monte Carlo Simulation
           </h3>
+          {isSpectator && subject && (
+            <p className="text-amber-300/80 text-xs mb-2">
+              Spectator mode — simulating{' '}
+              <code className="font-mono">
+                {subject.slice(0, 6)}…{subject.slice(-4)}
+              </code>
+              . You pay from your connected wallet.
+            </p>
+          )}
           <p className="text-zinc-400 text-sm max-w-lg mx-auto mb-1">
             1,000 GBM-simulated price paths over 30 days, daily resolution,
             using realized volatilities for each non-stable collateral.

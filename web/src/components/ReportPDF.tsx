@@ -37,10 +37,12 @@ import {
   CHART_COLORS,
   CorrelationHeatmap,
   CorrelationLegend,
+  DrawdownHistogram,
   EfficientFrontierScatter,
   HfGauge,
   HorizontalBars,
   MonteCarloHistogram,
+  PortfolioPathsChart,
   SamplePathsChart,
   ShockWaterfall,
   hfColor,
@@ -375,8 +377,10 @@ function CoverPage({ data }: { data: ReportData }) {
         <View>
           {[
             data.aave && 'Aave V3 risk profile with HF gauge and stress-test waterfall',
-            data.monteCarlo && '1,000-path Monte Carlo simulation with distribution + sample paths',
-            data.monteCarlo && 'Risk-adjusted return (Sharpe) and efficient-frontier sweep',
+            data.monteCarlo && 'Aave-leverage Monte Carlo: HF distribution, sample paths, P(liquidation)',
+            data.monteCarlo && 'Aave risk-adjusted return (Sharpe) and efficient-frontier sweep',
+            data.portfolioMc && 'Portfolio drawdown simulation: VaR, expected shortfall, P(loss)',
+            data.portfolioMc && 'Quant metrics: stddev, variance, Sortino, Beta, Jensen’s Alpha, Treynor',
             data.composition && 'Portfolio composition: asset classes, sectors, market caps, top holdings',
             data.correlation && 'Pairwise asset correlation heatmap',
             data.wallet && 'Per-chain wallet holdings with spam-token separation',
@@ -436,7 +440,13 @@ function buildExecutiveSummary(data: ReportData): string {
   }
   if (data.monteCarlo) {
     parts.push(
-      `Over a ${data.monteCarlo.horizonDays}-day horizon, ${fmtPct(data.monteCarlo.pLiquidation * 100)} probability of liquidation.`
+      `Aave-leverage Monte Carlo (${data.monteCarlo.horizonDays}d): ${fmtPct(data.monteCarlo.pLiquidation * 100)} probability of liquidation.`
+    );
+  }
+  if (data.portfolioMc) {
+    const mc = data.portfolioMc;
+    parts.push(
+      `Portfolio drawdown simulation (${mc.horizonDays}d): Value-at-Risk (95%) of ${fmtPct(mc.var95Pct, 1)}, ${fmtPct(mc.pLossGte.p20 * 100, 1)} probability of losing ≥20%.`
     );
   }
   if (data.composition) {
@@ -790,6 +800,356 @@ function MonteCarloAnalysisPage({
         </View>
         <Text style={{ fontSize: 9, color: COLORS.text, marginTop: 6, lineHeight: 1.4 }}>
           {mc.efficientFrontier.verdict}
+        </Text>
+      </View>
+
+      <PageFooter />
+    </Page>
+  );
+}
+
+// =========================================================================
+// Portfolio Monte Carlo page — drawdown / VaR for non-Aave wallets
+// =========================================================================
+
+function PortfolioMcPage({ data, pageNum }: { data: ReportData; pageNum: number }) {
+  if (!data.portfolioMc) return null;
+  const mc = data.portfolioMc;
+  const lvlColor =
+    mc.interpretation.level === 'safe'
+      ? COLORS.safe
+      : mc.interpretation.level === 'caution'
+        ? COLORS.caution
+        : COLORS.risky;
+  const fmtPctN = (n: number) => `${n.toFixed(2)}%`;
+  const fmtPctSimple = (n: number) => `${(n * 100).toFixed(2)}%`;
+
+  return (
+    <Page size="A4" style={styles.page}>
+      <PageHeader pageNum={pageNum} />
+      <Text style={styles.sectionTitle}>Portfolio Drawdown Simulation</Text>
+      <Text style={styles.sectionSubtitle}>
+        {mc.paths} correlated GBM paths over {mc.horizonDays} days · daily resolution · realized 14d
+        volatilities + correlations from {mc.assetsAnalyzed.length} assets
+      </Text>
+
+      {/* Headline metrics — VaR is the headline number for any non-leveraged wallet. */}
+      <View style={styles.metricGrid}>
+        <MetricCard
+          label="Value-at-Risk (95%)"
+          value={fmtPctN(mc.var95Pct)}
+          color={mc.var95Pct > 25 ? COLORS.risky : mc.var95Pct > 10 ? COLORS.caution : COLORS.safe}
+          hint="5%-tile loss over horizon"
+        />
+        <MetricCard
+          label="Expected Shortfall"
+          value={fmtPctN(mc.cvar95Pct)}
+          color={mc.cvar95Pct > 30 ? COLORS.risky : mc.cvar95Pct > 15 ? COLORS.caution : COLORS.safe}
+          hint="Avg loss in worst 5%"
+        />
+        <MetricCard
+          label="P(Loss ≥ 20%)"
+          value={fmtPctSimple(mc.pLossGte.p20)}
+          color={mc.pLossGte.p20 > 0.1 ? COLORS.risky : mc.pLossGte.p20 > 0.02 ? COLORS.caution : COLORS.safe}
+        />
+        <MetricCard
+          label="Median Max DD"
+          value={fmtPctN(mc.maxDrawdown.p50Pct)}
+          color={mc.maxDrawdown.p50Pct > 25 ? COLORS.risky : mc.maxDrawdown.p50Pct > 12 ? COLORS.caution : COLORS.safe}
+          hint="Peak-to-trough"
+        />
+      </View>
+
+      {/* Verdict + recommendation */}
+      <View style={[styles.card, { borderColor: lvlColor }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+          <View
+            style={{
+              backgroundColor: lvlColor,
+              paddingHorizontal: 6,
+              paddingVertical: 2,
+              borderRadius: 3,
+              marginRight: 8,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 7,
+                fontFamily: 'Helvetica-Bold',
+                color: '#000',
+                letterSpacing: 1,
+                textTransform: 'uppercase',
+              }}
+            >
+              {mc.interpretation.level}
+            </Text>
+          </View>
+          <Text style={{ fontSize: 11, fontFamily: 'Helvetica-Bold', color: lvlColor, flex: 1 }}>
+            {mc.interpretation.headline}
+          </Text>
+        </View>
+        {mc.interpretation.details.map((d, i) => (
+          <View key={i} style={styles.bullet}>
+            <Text style={styles.bulletDot}>·</Text>
+            <Text style={styles.bulletText}>{d}</Text>
+          </View>
+        ))}
+      </View>
+
+      <View style={styles.recommendBox}>
+        <Text style={styles.recommendLabel}>Recommendation</Text>
+        <Text style={{ fontSize: 10, color: COLORS.text, lineHeight: 1.5 }}>
+          {mc.interpretation.recommendation}
+        </Text>
+      </View>
+
+      {/* Histogram of terminal value */}
+      <View style={styles.card}>
+        <Text style={styles.metricLabel}>Terminal portfolio value distribution</Text>
+        <DrawdownHistogram
+          bins={mc.histogram.bins}
+          counts={mc.histogram.counts}
+          initialUsd={mc.initialPortfolioUsd}
+          width={510}
+          height={130}
+        />
+      </View>
+
+      <PageFooter />
+    </Page>
+  );
+}
+
+function PortfolioMcPathsPage({ data, pageNum }: { data: ReportData; pageNum: number }) {
+  if (!data.portfolioMc) return null;
+  const mc = data.portfolioMc;
+  const fmtPctSimple = (n: number) => `${(n * 100).toFixed(2)}%`;
+  return (
+    <Page size="A4" style={styles.page}>
+      <PageHeader pageNum={pageNum} />
+      <Text style={styles.sectionTitle}>Sample Paths & Risk-Adjusted Return</Text>
+      <Text style={styles.sectionSubtitle}>
+        {mc.samplePaths.length} of {mc.paths} simulated paths · normalized to 100% at start
+      </Text>
+
+      <View style={styles.card}>
+        <PortfolioPathsChart
+          paths={mc.samplePaths}
+          horizonDays={mc.horizonDays}
+          initialUsd={mc.initialPortfolioUsd}
+          width={510}
+          height={170}
+        />
+        <Text style={{ fontSize: 7, color: COLORS.textSubtle, marginTop: 4 }}>
+          Red paths breached a 30% drawdown at some point during the simulation. Dashed line marks
+          break-even (100%).
+        </Text>
+      </View>
+
+      <Text style={styles.subTitle}>Risk-adjusted return (annualized)</Text>
+      <View style={styles.metricGrid}>
+        <MetricCard
+          label="Sharpe Ratio"
+          value={mc.riskAdjusted.sharpeRatio.toFixed(2)}
+          color={
+            mc.riskAdjusted.sharpeRatio >= 1
+              ? COLORS.safe
+              : mc.riskAdjusted.sharpeRatio >= 0
+                ? COLORS.caution
+                : COLORS.risky
+          }
+        />
+        <MetricCard
+          label="Expected Return"
+          value={fmtPctSimple(mc.riskAdjusted.annualizedReturnMean)}
+          color={
+            mc.riskAdjusted.annualizedReturnMean >= mc.riskAdjusted.riskFreeRateAnnual
+              ? COLORS.safe
+              : COLORS.risky
+          }
+        />
+        <MetricCard
+          label="Volatility"
+          value={fmtPctSimple(mc.riskAdjusted.annualizedReturnVolatility)}
+          color={COLORS.accent}
+        />
+        <MetricCard
+          label="Risk-Free Rate"
+          value={fmtPctSimple(mc.riskAdjusted.riskFreeRateAnnual)}
+          color={COLORS.textMuted}
+        />
+      </View>
+
+      {/* Asset coverage transparency */}
+      <Text style={styles.subTitle}>Coverage</Text>
+      <View style={styles.card}>
+        <Text style={{ fontSize: 9, color: COLORS.textMuted, marginBottom: 4 }}>
+          Assets simulated:{' '}
+          <Text style={{ color: COLORS.text, fontFamily: 'Helvetica-Bold' }}>
+            {mc.assetsAnalyzed.join(', ') || '—'}
+          </Text>
+        </Text>
+        {mc.assetsSkipped.length > 0 && (
+          <Text style={{ fontSize: 9, color: COLORS.caution }}>
+            Skipped (no volatility data):{' '}
+            <Text style={{ fontFamily: 'Helvetica-Bold' }}>
+              {mc.assetsSkipped.join(', ')}
+            </Text>
+            {' — '}
+            <Text style={{ color: COLORS.textMuted }}>
+              {mc.totalUsdSkipped > 0
+                ? `representing $${mc.totalUsdSkipped.toLocaleString(undefined, { maximumFractionDigits: 2 })} of holdings.`
+                : 'zero USD impact.'}
+            </Text>
+          </Text>
+        )}
+      </View>
+
+      <PageFooter />
+    </Page>
+  );
+}
+
+// =========================================================================
+// Quant Metrics page — variance, Sortino, Beta, Jensen's Alpha, etc.
+// =========================================================================
+
+function QuantMetricsPage({ data, pageNum }: { data: ReportData; pageNum: number }) {
+  if (!data.portfolioMc) return null;
+  const q = data.portfolioMc.quant;
+  const fmtPctSimple = (n: number) => `${(n * 100).toFixed(2)}%`;
+  const fmtNum = (n: number) => (Number.isFinite(n) ? n.toFixed(2) : '—');
+  return (
+    <Page size="A4" style={styles.page}>
+      <PageHeader pageNum={pageNum} />
+      <Text style={styles.sectionTitle}>Quant Metrics</Text>
+      <Text style={styles.sectionSubtitle}>
+        Wealth-manager-grade statistics — distribution moments, downside risk, benchmark-relative
+        performance vs {q.benchmark?.symbol ?? 'BTC'}
+      </Text>
+
+      {/* Distribution moments */}
+      <Text style={styles.subTitle}>Distribution moments (annualized)</Text>
+      <View style={styles.metricGrid}>
+        <MetricCard label="Stddev" value={fmtPctSimple(q.stddevAnnual)} color={COLORS.accent} hint="Annualized vol" />
+        <MetricCard label="Variance" value={fmtPctSimple(q.varianceAnnual)} color={COLORS.accent} hint="= Stddev²" />
+        <MetricCard
+          label="Skewness"
+          value={fmtNum(q.skewness)}
+          color={q.skewness < -0.5 ? COLORS.risky : q.skewness > 0.5 ? COLORS.safe : COLORS.caution}
+          hint={q.skewness < 0 ? 'Left-tailed' : 'Right-tailed'}
+        />
+        <MetricCard
+          label="Excess Kurtosis"
+          value={fmtNum(q.excessKurtosis)}
+          color={q.excessKurtosis > 1 ? COLORS.risky : COLORS.safe}
+          hint={q.excessKurtosis > 1 ? 'Heavy tails' : 'Near-normal'}
+        />
+      </View>
+
+      {/* Downside metrics */}
+      <Text style={styles.subTitle}>Downside risk</Text>
+      <View style={styles.metricGrid}>
+        <MetricCard
+          label="Downside Deviation"
+          value={fmtPctSimple(q.downsideDeviationAnnual)}
+          color={COLORS.caution}
+          hint="Negative-only vol, annualized"
+        />
+        <MetricCard
+          label="Sortino Ratio"
+          value={fmtNum(q.sortinoRatio)}
+          color={q.sortinoRatio >= 1 ? COLORS.safe : q.sortinoRatio >= 0 ? COLORS.caution : COLORS.risky}
+          hint="(R-Rf) / downside dev"
+        />
+        <MetricCard
+          label="VaR (99%)"
+          value={`${q.var99Pct.toFixed(2)}%`}
+          color={q.var99Pct > 35 ? COLORS.risky : q.var99Pct > 20 ? COLORS.caution : COLORS.safe}
+          hint="1%-tile loss"
+        />
+        <MetricCard
+          label="Expected Shortfall (99%)"
+          value={`${q.cvar99Pct.toFixed(2)}%`}
+          color={q.cvar99Pct > 50 ? COLORS.risky : q.cvar99Pct > 30 ? COLORS.caution : COLORS.safe}
+          hint="Avg loss in worst 1%"
+        />
+      </View>
+
+      {/* Benchmark — Beta / Alpha / Treynor / Information Ratio */}
+      <Text style={styles.subTitle}>
+        vs {q.benchmark?.symbol ?? 'BTC'} benchmark
+      </Text>
+      {q.benchmark ? (
+        <>
+          <View style={styles.metricGrid}>
+            <MetricCard
+              label="Beta"
+              value={fmtNum(q.benchmark.beta)}
+              color={
+                Math.abs(q.benchmark.beta - 1) < 0.2
+                  ? COLORS.safe
+                  : q.benchmark.beta > 1.5 || q.benchmark.beta < 0
+                    ? COLORS.risky
+                    : COLORS.caution
+              }
+              hint={`Sensitivity to ${q.benchmark.symbol}`}
+            />
+            <MetricCard
+              label="Jensen's Alpha"
+              value={fmtPctSimple(q.benchmark.jensenAlphaAnnual)}
+              color={q.benchmark.jensenAlphaAnnual > 0 ? COLORS.safe : COLORS.risky}
+              hint="vs CAPM-fair return"
+            />
+            <MetricCard
+              label="Treynor Ratio"
+              value={fmtNum(q.benchmark.treynorRatio)}
+              color={q.benchmark.treynorRatio > 0 ? COLORS.safe : COLORS.risky}
+              hint="(R-Rf) / β"
+            />
+            <MetricCard
+              label="Information Ratio"
+              value={fmtNum(q.benchmark.informationRatio)}
+              color={
+                q.benchmark.informationRatio > 0.5
+                  ? COLORS.safe
+                  : q.benchmark.informationRatio > 0
+                    ? COLORS.caution
+                    : COLORS.risky
+              }
+              hint="Active return / TE"
+            />
+          </View>
+          <View style={styles.card}>
+            <Text style={{ fontSize: 9, color: COLORS.textMuted, lineHeight: 1.5 }}>
+              Portfolio correlates{' '}
+              <Text style={{ color: COLORS.text, fontFamily: 'Helvetica-Bold' }}>
+                {q.benchmark.correlation.toFixed(2)}
+              </Text>{' '}
+              with {q.benchmark.symbol} (R² ={' '}
+              <Text style={{ color: COLORS.text, fontFamily: 'Helvetica-Bold' }}>
+                {(q.benchmark.rSquared * 100).toFixed(0)}%
+              </Text>
+              ). β tells you how much the portfolio amplifies benchmark moves; α
+              measures the excess return after stripping out that benchmark exposure.
+              Positive α means the portfolio outperforms what β alone would predict.
+            </Text>
+          </View>
+        </>
+      ) : (
+        <Text style={{ fontSize: 9, color: COLORS.textSubtle, marginTop: 4 }}>
+          Benchmark unavailable for this run — couldn't fetch BTC price history.
+        </Text>
+      )}
+
+      <View style={[styles.card, { marginTop: 8 }]}>
+        <Text style={{ fontSize: 8, color: COLORS.textSubtle, lineHeight: 1.5 }}>
+          <Text style={{ fontFamily: 'Helvetica-Bold', color: COLORS.textMuted }}>How to read these.</Text>{' '}
+          Sharpe + Sortino + Treynor are reward/risk ratios — higher is better. Sharpe penalizes all volatility, Sortino
+          only downside, Treynor only systematic risk. VaR(95) and VaR(99) are tail risk: "5% (or 1%) of the time you'll
+          lose at least this much." Skewness flags asymmetric distributions; excess kurtosis flags fat tails.
+          Beta &gt; 1 means the portfolio amplifies benchmark moves. Jensen's Alpha is the excess
+          return after accounting for that beta exposure. Information Ratio measures consistency of outperformance.
         </Text>
       </View>
 
@@ -1307,6 +1667,14 @@ export function ReportPDF({ data }: { data: ReportData }) {
     pages.push(<MonteCarloDistributionPage key="mc1" data={data} pageNum={pageNum} />);
     pageNum++;
     pages.push(<MonteCarloAnalysisPage key="mc2" data={data} pageNum={pageNum} />);
+  }
+  if (data.portfolioMc) {
+    pageNum++;
+    pages.push(<PortfolioMcPage key="pmc1" data={data} pageNum={pageNum} />);
+    pageNum++;
+    pages.push(<PortfolioMcPathsPage key="pmc2" data={data} pageNum={pageNum} />);
+    pageNum++;
+    pages.push(<QuantMetricsPage key="quant" data={data} pageNum={pageNum} />);
   }
   if (data.composition) {
     pageNum++;

@@ -278,7 +278,22 @@ export function analyzeComposition(
   holdings: HoldingInput[],
   opts: { xray?: boolean } = {}
 ): CompositionAnalysis {
-  const filtered = holdings.filter((h) => h.usdValue > 0);
+  // Filter zero-value rows, then DEDUPE BY SYMBOL. Multi-chain wallets
+  // hold the same asset on several chains (ETH on mainnet + arb + base
+  // + optimism = four entries with the same symbol). For composition,
+  // concentration, and top-holdings purposes those collapse into one
+  // line — the user's "ETH" exposure is the sum, not four separate
+  // positions. Sectors / market caps already aggregated correctly via
+  // classification, but the per-symbol views and concentration math
+  // need explicit deduping.
+  const rawFiltered = holdings.filter((h) => h.usdValue > 0);
+  const symbolMap = new Map<string, number>();
+  for (const h of rawFiltered) {
+    symbolMap.set(h.symbol, (symbolMap.get(h.symbol) ?? 0) + h.usdValue);
+  }
+  const filtered: HoldingInput[] = [...symbolMap.entries()].map(
+    ([symbol, usdValue]) => ({ symbol, usdValue })
+  );
   const totalUsd = filtered.reduce((acc, h) => acc + h.usdValue, 0);
 
   if (totalUsd === 0) {
