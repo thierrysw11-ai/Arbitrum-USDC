@@ -19,12 +19,6 @@ function isValidAddress(s: string | null | undefined): s is `0x${string}` {
   return !!s && /^0x[a-fA-F0-9]{40}$/.test(s);
 }
 
-/** A handful of well-known wallets to make demo / sales work easy. */
-const PRESET_WALLETS: Array<{ label: string; address: `0x${string}` }> = [
-  { label: 'vitalik.eth', address: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' },
-  { label: 'a16z', address: '0x05E793cE0C6027323Ac150F6d45C2344d28B6019' },
-];
-
 /**
  * Top-level export wraps the body in Suspense — required by Next.js 14
  * App Router for `useSearchParams()`. Without it, the URL-driven spectator
@@ -253,35 +247,16 @@ function SpectatorControls({
           {isCurrent ? 'Viewing' : 'View'}
         </button>
       </div>
-      <div className="flex flex-wrap gap-1.5 items-center">
-        <span className="text-[10px] uppercase tracking-widest text-zinc-600 font-bold mr-1">
-          Try:
-        </span>
-        {PRESET_WALLETS.map((p) => {
-          const active = p.address.toLowerCase() === (current ?? '').toLowerCase();
-          return (
-            <button
-              key={p.address}
-              onClick={() => onChange(p.address)}
-              className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors ${
-                active
-                  ? 'border-purple-500/60 bg-purple-500/10 text-purple-200'
-                  : 'border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              {p.label}
-            </button>
-          );
-        })}
-        {current && (
+      {current && (
+        <div className="flex flex-wrap gap-1.5 items-center">
           <button
             onClick={() => onChange(null)}
-            className="text-[11px] px-2.5 py-1 rounded-full border border-zinc-800 hover:border-zinc-700 text-zinc-500 hover:text-zinc-300 ml-1"
+            className="text-[11px] px-2.5 py-1 rounded-full border border-zinc-800 hover:border-zinc-700 text-zinc-500 hover:text-zinc-300"
           >
             Use my wallet
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
