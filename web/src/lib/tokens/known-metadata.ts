@@ -4,7 +4,7 @@
  *
  * Why a static map: token symbol/name/decimals are immutable. Calling
  * `alchemy_getTokenMetadata` for USDC every time we scan a wallet wastes
- * 12 compute units on Alchemy. Whale wallets compound this (vitalik holds
+ * 12 compute units on Alchemy. Whale wallets compound this (which often hold
  * dozens of well-known tokens). For every entry below, we save one RPC
  * call. For typical wallets, this drops metadata RPC calls 60–80%.
  *

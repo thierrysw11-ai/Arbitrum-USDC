@@ -5,7 +5,7 @@
  * with metadata, prices, and spam flags pre-computed by Alchemy. This
  * replaces our previous fan-out approach (eth_getBalance + getTokenBalances
  * + getTokenMetadata × 75 + by-address-prices, per chain × 5 chains)
- * that was hitting 429s on whale wallets like vitalik.
+ * that was hitting 429s on whale wallets.
  *
  * Endpoint: POST https://api.g.alchemy.com/data/v1/{API_KEY}/assets/tokens/by-address
  *

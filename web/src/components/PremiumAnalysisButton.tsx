@@ -116,7 +116,7 @@ interface PremiumAnalysisButtonProps {
    * Optional spectator-mode override. When set, every read (Aave position,
    * wallet holdings, Monte Carlo, AI narrative) targets THIS address instead
    * of the connected wallet — perfect for generating demo PDFs against any
-   * public address (vitalik.eth etc.). The connected wallet remains the
+   * public address. The connected wallet remains the
    * x402 payer / signer.
    */
   viewAddress?: `0x${string}`;

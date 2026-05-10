@@ -33,7 +33,7 @@ import {
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-// High-activity wallets (vitalik, large funds) have hundreds of token
+// High-activity wallets (whales, large funds) have hundreds of token
 // interactions across 5 chains. Default 10s isn't enough — bump to the
 // Vercel Pro ceiling so the scan can complete.
 export const maxDuration = 60;
@@ -486,7 +486,7 @@ async function scanChain(
     // per 25 addresses, ~2-3 calls total even for high-activity wallets).
     // Then only fetch metadata for tokens that actually have a USD price.
     //
-    // For wallets like vitalik this drops metadata calls from ~75/chain
+    // For high-activity wallets this drops metadata calls from ~75/chain
     // (which gets us rate-limited) to ~10-20/chain. Most of the dropped
     // tokens are spam-tier addresses that have no real market price
     // anyway, so we lose nothing meaningful.
